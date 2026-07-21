@@ -1,7 +1,9 @@
 package com.garaho.ime;
 
 import com.garaho.ime.engine.EngineListener;
+import com.garaho.ime.engine.EnglishT9Engine;
 import com.garaho.ime.engine.ImeEngine;
+import com.garaho.ime.engine.InputMode;
 import com.garaho.ime.engine.RimeEngine;
 import com.garaho.ime.engine.T9PinyinEngine;
 import com.garaho.ime.keymap.InputAction;
@@ -25,10 +27,16 @@ import java.util.List;
  * Top-level IME entry point (design doc §2 layer 5).
  *
  * <p>Receives physical {@link KeyEvent}s, routes them through {@link KeyMapper}
- * to obtain an {@link InputAction}, then drives either the active
- * {@link ImeEngine} (Phase-1 {@link T9PinyinEngine} or Phase-4
- * {@link RimeEngine}) and the 0-Touch focus UI ({@link CandidateBar} /
- * {@link SymbolPanel}).
+ * to obtain an {@link InputAction}, then dispatches to the active input mode
+ * (design doc §3.1.1 - 中/英/数字/符号):
+ * <ul>
+ *   <li>{@link InputMode#ZH} - pinyin via {@link T9PinyinEngine} or
+ *       {@link RimeEngine} (librime).</li>
+ *   <li>{@link InputMode#EN} - {@link EnglishT9Engine} predictive dictionary.</li>
+ *   <li>{@link InputMode#NUM} - direct digit commit, no candidate strip.</li>
+ *   <li>SYM - {@link SymbolPanel} via {@code SHOW_SYMBOL_PANEL}.</li>
+ * </ul>
+ * The {@code TOGGLE_LANG_MODE} action cycles ZH &rarr; EN &rarr; NUM internally.
  */
 public class GarahoImeService extends InputMethodService implements EngineListener {
 
@@ -36,7 +44,10 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private static final long RESET_COMBO_WINDOW_MS = 5000;
 
     private KeyMapper keyMapper;
-    private ImeEngine engine;
+    private ImeEngine pinyinEngine;
+    private EnglishT9Engine englishEngine;
+    private InputMode mode = InputMode.ZH;
+
     private CandidateBar candidateBar;
     private SymbolPanel symbolPanel;
     private FrameLayout rootContainer;
@@ -55,13 +66,16 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         RimeEngine rimeEngine = RimeEngine.tryCreate(
                 rimeData.getSharedDir(), rimeData.getUserDir(), "0.2.0");
         if (rimeEngine != null) {
-            engine = rimeEngine;
-            Log.i(TAG, "Engine: native librime (RimeEngine)");
+            pinyinEngine = rimeEngine;
+            Log.i(TAG, "Pinyin engine: native librime (RimeEngine)");
         } else {
-            engine = new T9PinyinEngine();
-            Log.i(TAG, "Engine: built-in T9PinyinEngine");
+            pinyinEngine = new T9PinyinEngine();
+            Log.i(TAG, "Pinyin engine: built-in T9PinyinEngine");
         }
-        engine.setListener(this);
+        pinyinEngine.setListener(this);
+
+        englishEngine = new EnglishT9Engine();
+        englishEngine.setListener(this);
     }
 
     @Override
@@ -73,6 +87,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 new FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT));
+        candidateBar.setModeLabel(mode.label());
         return rootContainer;
     }
 
@@ -134,7 +149,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 return handleBackspace();
 
             case TOGGLE_LANG_MODE:
-                switchLanguage();
+                cycleLanguageMode();
                 return true;
 
             case SHOW_SYMBOL_PANEL:
@@ -151,19 +166,36 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     private boolean handleDigit(InputAction action) {
         int digit = action.ordinal() - InputAction.INPUT_KEY_0.ordinal();
+        if (mode == InputMode.NUM) {
+            if (digit >= 0 && digit <= 9) {
+                commitChar((char) ('0' + digit));
+                return true;
+            }
+            if (action == InputAction.INPUT_KEY_STAR) {
+                commitChar('*');
+                return true;
+            }
+            if (action == InputAction.INPUT_KEY_POUND) {
+                commitChar('#');
+                return true;
+            }
+            return false;
+        }
+
+        ImeEngine active = activeEngine();
         if (digit >= 2 && digit <= 9) {
-            return engine.processDigit(digit);
+            return active.processDigit(digit);
         }
         if (action == InputAction.INPUT_KEY_1) {
-            if (engine.candidateCount() > 0) {
-                return engine.selectCandidate(0);
+            if (active.candidateCount() > 0) {
+                return active.selectCandidate(0);
             }
             commitChar('1');
             return true;
         }
         if (action == InputAction.INPUT_KEY_0) {
-            if (engine.candidateCount() > 0) {
-                boolean ok = engine.selectCandidate(0);
+            if (active.candidateCount() > 0) {
+                boolean ok = active.selectCandidate(0);
                 if (ok) {
                     commitChar(' ');
                 }
@@ -184,7 +216,8 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     }
 
     private boolean handleBackspace() {
-        if (engine.backspace()) {
+        ImeEngine active = activeEngine();
+        if (active != null && active.backspace()) {
             return true;
         }
         android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
@@ -204,13 +237,43 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (candidateBar == null) {
             return false;
         }
+        ImeEngine active = activeEngine();
+        if (active == null) {
+            return false;
+        }
         int focus = candidateBar.getFocusIndex();
-        return engine.selectCandidate(focus);
+        return active.selectCandidate(focus);
     }
 
-    private void switchLanguage() {
-        engine.reset();
-        switchToNextInputMethod(false);
+    private ImeEngine activeEngine() {
+        switch (mode) {
+            case ZH:
+                return pinyinEngine;
+            case EN:
+                return englishEngine;
+            case NUM:
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Cycle 中 &rarr; 英 &rarr; 数字 &rarr; 中 internally (design doc §3.1.1),
+     * clearing any in-progress composing so stale candidates never leak across
+     * modes.
+     */
+    private void cycleLanguageMode() {
+        ImeEngine previous = activeEngine();
+        if (previous != null) {
+            previous.reset();
+        }
+        mode = mode.next();
+        if (candidateBar != null) {
+            candidateBar.setModeLabel(mode.label());
+            candidateBar.setCandidates(new String[0]);
+            candidateBar.setComposingText("");
+        }
+        Log.i(TAG, "Input mode -> " + mode);
     }
 
     private void showSymbolPanel() {

@@ -29,6 +29,8 @@ public class CandidateBar extends LinearLayout {
     private String[] candidates = new String[0];
     private int focusIndex = 0;
     private boolean gridExpanded = false;
+    private String modeLabel = "中";
+    private String composingText = "";
 
     public CandidateBar(Context context) {
         super(context);
@@ -45,10 +47,26 @@ public class CandidateBar extends LinearLayout {
         LayoutInflater.from(getContext()).inflate(R.layout.view_candidate_bar_children, this, true);
         composingPreview = findViewById(R.id.composing_preview);
         candidateRow = findViewById(R.id.candidate_row);
+        renderHeader();
+    }
+
+    public void setModeLabel(String label) {
+        this.modeLabel = label == null ? "" : label;
+        renderHeader();
     }
 
     public void setComposingText(CharSequence text) {
-        composingPreview.setText(text == null ? "" : text);
+        this.composingText = text == null ? "" : text.toString();
+        renderHeader();
+    }
+
+    private void renderHeader() {
+        StringBuilder sb = new StringBuilder();
+        if (modeLabel.length() > 0) {
+            sb.append('[').append(modeLabel).append(']').append(' ');
+        }
+        sb.append(composingText);
+        composingPreview.setText(sb.toString());
     }
 
     public void setCandidates(String[] candidates) {
