@@ -1,14 +1,17 @@
 package com.garaho.ime;
 
+import com.garaho.ime.engine.EngineListener;
+import com.garaho.ime.engine.ImeEngine;
+import com.garaho.ime.engine.RimeEngine;
+import com.garaho.ime.engine.T9PinyinEngine;
 import com.garaho.ime.keymap.InputAction;
 import com.garaho.ime.keymap.KeyMapper;
-import com.garaho.ime.rime.RimeBridge;
+import com.garaho.ime.rime.RimeData;
 import com.garaho.ime.ui.CandidateBar;
 import com.garaho.ime.ui.SymbolPanel;
 
 import android.inputmethodservice.InputMethodService;
 import android.os.SystemClock;
-import android.text.TextUtils;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
@@ -16,22 +19,24 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
-import java.io.File;
+import java.util.List;
 
 /**
  * Top-level IME entry point (design doc §2 layer 5).
  *
  * <p>Receives physical {@link KeyEvent}s, routes them through {@link KeyMapper}
- * to obtain an {@link InputAction}, then drives either the RIME core (librime.so
- * via {@link RimeBridge}) or the 0-Touch focus UI ({@link CandidateBar} /
+ * to obtain an {@link InputAction}, then drives either the active
+ * {@link ImeEngine} (Phase-1 {@link T9PinyinEngine} or Phase-4
+ * {@link RimeEngine}) and the 0-Touch focus UI ({@link CandidateBar} /
  * {@link SymbolPanel}).
  */
-public class GarahoImeService extends InputMethodService {
+public class GarahoImeService extends InputMethodService implements EngineListener {
 
     private static final String TAG = "GarahoIme";
     private static final long RESET_COMBO_WINDOW_MS = 5000;
 
     private KeyMapper keyMapper;
+    private ImeEngine engine;
     private CandidateBar candidateBar;
     private SymbolPanel symbolPanel;
     private FrameLayout rootContainer;
@@ -43,11 +48,20 @@ public class GarahoImeService extends InputMethodService {
     public void onCreate() {
         super.onCreate();
         keyMapper = new KeyMapper(this);
-        File sharedDir = new File(getFilesDir(), "rime");
-        File userDir = new File(getFilesDir(), "rime_user");
-        if (!sharedDir.exists()) sharedDir.mkdirs();
-        if (!userDir.exists()) userDir.mkdirs();
-        RimeBridge.init(sharedDir.getAbsolutePath(), userDir.getAbsolutePath());
+
+        RimeData rimeData = new RimeData(this);
+        rimeData.ensureExtracted(this);
+
+        RimeEngine rimeEngine = RimeEngine.tryCreate(
+                rimeData.getSharedDir(), rimeData.getUserDir(), "0.2.0");
+        if (rimeEngine != null) {
+            engine = rimeEngine;
+            Log.i(TAG, "Engine: native librime (RimeEngine)");
+        } else {
+            engine = new T9PinyinEngine();
+            Log.i(TAG, "Engine: built-in T9PinyinEngine");
+        }
+        engine.setListener(this);
     }
 
     @Override
@@ -60,11 +74,6 @@ public class GarahoImeService extends InputMethodService {
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT));
         return rootContainer;
-    }
-
-    @Override
-    public View onCreateCandidatesView() {
-        return super.onCreateCandidatesView();
     }
 
     @Override
@@ -98,7 +107,6 @@ public class GarahoImeService extends InputMethodService {
             return false;
         }
         switch (action) {
-            case INPUT_KEY_0:
             case INPUT_KEY_1:
             case INPUT_KEY_2:
             case INPUT_KEY_3:
@@ -108,9 +116,8 @@ public class GarahoImeService extends InputMethodService {
             case INPUT_KEY_7:
             case INPUT_KEY_8:
             case INPUT_KEY_9:
-            case INPUT_KEY_STAR:
-            case INPUT_KEY_POUND:
-                return handleT9Key(action);
+            case INPUT_KEY_0:
+                return handleDigit(action);
 
             case NAV_LEFT:
                 return candidateBar != null && candidateBar.moveFocus(-1);
@@ -142,22 +149,25 @@ public class GarahoImeService extends InputMethodService {
         }
     }
 
-    private boolean handleT9Key(InputAction action) {
-        int digit = action.ordinal() - InputAction.INPUT_KEY_1.ordinal();
-        if (digit >= 0 && digit <= 8) {
-            if (RimeBridge.isLoaded()) {
-                RimeBridge.processKey('1' + digit, 0);
-                refreshCandidates();
-                return true;
+    private boolean handleDigit(InputAction action) {
+        int digit = action.ordinal() - InputAction.INPUT_KEY_0.ordinal();
+        if (digit >= 2 && digit <= 9) {
+            return engine.processDigit(digit);
+        }
+        if (action == InputAction.INPUT_KEY_1) {
+            if (engine.candidateCount() > 0) {
+                return engine.selectCandidate(0);
             }
-            commitChar((char) ('1' + digit));
+            commitChar('1');
             return true;
         }
         if (action == InputAction.INPUT_KEY_0) {
-            if (RimeBridge.isLoaded()) {
-                RimeBridge.processKey('0', 0);
-                refreshCandidates();
-                return true;
+            if (engine.candidateCount() > 0) {
+                boolean ok = engine.selectCandidate(0);
+                if (ok) {
+                    commitChar(' ');
+                }
+                return ok;
             }
             commitChar('0');
             return true;
@@ -174,30 +184,32 @@ public class GarahoImeService extends InputMethodService {
     }
 
     private boolean handleBackspace() {
-        InputConnectionExt conn = new InputConnectionExt(getCurrentInputConnection());
-        CharSequence sel = conn.getSelectedText(0);
-        if (!TextUtils.isEmpty(sel)) {
-            conn.deleteSurroundingText(0, sel.length());
+        if (engine.backspace()) {
             return true;
         }
-        conn.deleteSurroundingText(1, 0);
-        return true;
+        android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
+        if (ic != null) {
+            CharSequence sel = ic.getSelectedText(0);
+            if (sel != null && sel.length() > 0) {
+                ic.deleteSurroundingText(0, sel.length());
+            } else {
+                ic.deleteSurroundingText(1, 0);
+            }
+            return true;
+        }
+        return false;
     }
 
     private boolean confirmSelection() {
         if (candidateBar == null) {
             return false;
         }
-        String word = candidateBar.consumeSelected();
-        if (word == null) {
-            return false;
-        }
-        InputConnectionExt conn = new InputConnectionExt(getCurrentInputConnection());
-        conn.commitText(word, 1);
-        return true;
+        int focus = candidateBar.getFocusIndex();
+        return engine.selectCandidate(focus);
     }
 
     private void switchLanguage() {
+        engine.reset();
         switchToNextInputMethod(false);
     }
 
@@ -206,26 +218,41 @@ public class GarahoImeService extends InputMethodService {
             symbolPanel = new SymbolPanel(this, new SymbolPanel.OnSymbolPicked() {
                 @Override
                 public void onSymbolPicked(String symbol) {
-                    InputConnectionExt conn = new InputConnectionExt(getCurrentInputConnection());
-                    conn.commitText(symbol, 1);
+                    commitTextToEditor(symbol);
                 }
             });
-            symbolPanel.attachTo(rootContainer);
         }
         symbolPanel.show();
     }
 
-    private void refreshCandidates() {
-        if (candidateBar == null) {
-            return;
-        }
-        String[] candidates = RimeBridge.getCandidates();
-        candidateBar.setCandidates(candidates == null ? new String[0] : candidates);
+    private void commitChar(char c) {
+        commitTextToEditor(String.valueOf(c));
     }
 
-    private void commitChar(char c) {
-        InputConnectionExt conn = new InputConnectionExt(getCurrentInputConnection());
-        conn.commitText(String.valueOf(c), 1);
+    private void commitTextToEditor(CharSequence text) {
+        android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
+        if (ic != null) {
+            ic.commitText(text, 1);
+        }
+    }
+
+    @Override
+    public void onComposingChanged(String composing) {
+        if (candidateBar != null) {
+            candidateBar.setComposingText(composing);
+        }
+    }
+
+    @Override
+    public void onCandidatesChanged(List<String> candidates) {
+        if (candidateBar != null) {
+            candidateBar.setCandidates(candidates.toArray(new String[0]));
+        }
+    }
+
+    @Override
+    public void onCommit(String text) {
+        commitTextToEditor(text);
     }
 
     /**
@@ -238,25 +265,5 @@ public class GarahoImeService extends InputMethodService {
         }
         boolean ok = keyMapper.resetToFactory();
         Log.w(TAG, "Safe-escape combo invoked; factory reset " + (ok ? "OK" : "FAILED"));
-    }
-
-    private static final class InputConnectionExt {
-        private final android.view.inputmethod.InputConnection ic;
-
-        InputConnectionExt(android.view.inputmethod.InputConnection ic) {
-            this.ic = ic;
-        }
-
-        CharSequence getSelectedText(int flags) {
-            return ic == null ? null : ic.getSelectedText(flags);
-        }
-
-        void deleteSurroundingText(int before, int after) {
-            if (ic != null) ic.deleteSurroundingText(before, after);
-        }
-
-        void commitText(CharSequence text, int newCursor) {
-            if (ic != null) ic.commitText(text, newCursor);
-        }
     }
 }

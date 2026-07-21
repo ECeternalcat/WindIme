@@ -79,11 +79,17 @@ lint/tmp/
 .DS_Store
 Thumbs.db
 
-# Native prebuilt libraries (will be built locally)
-app/src/main/jniLibs/
+# Native prebuilt libraries - vendored librime_jni.so IS tracked (see jniLibs/).
+# Per-build artifacts under .cxx / .externalNativeBuild are still ignored above.
 
 # RIME user data generated on device
 *rime.userdb*
 *.userdb*
 *.bin
 !app/src/main/assets/**/*.bin
+
+# External reference material (prebuilt .so is vendored under app/src/main/jniLibs/)
+/trimelib/
+
+# Local build logs
+/*.txt

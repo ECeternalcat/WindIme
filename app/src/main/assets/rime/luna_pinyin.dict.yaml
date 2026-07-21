@@ -1,0 +1,203 @@
+# Rime dictionary: luna_pinyin (WindIme starter)
+# Compact high-frequency Mandarin vocabulary. Tab-separated: <text>\t<pinyin>.
+# Multi-syllable words separate syllables with a single space.
+# Replace/extend with rime-ice for full coverage.
+---
+name: luna_pinyin
+version: "0.1"
+sort: by_weight
+use_preset_vocabulary: false
+...
+---
+的	de
+是	shi
+一	yi
+了	le
+我	wo
+在	zai
+有	you
+人	ren
+这	zhe
+中	zhong
+大	da
+为	wei
+上	shang
+个	ge
+国	guo
+他	ta
+会	hui
+来	lai
+以	yi
+个	ge
+时	shi
+要	yao
+就	jiu
+出	chu
+也	ye
+对	dui
+生	sheng
+能	neng
+而	er
+子	zi
+那	na
+你	ni
+都	dou
+好	hao
+里	li
+多	duo
+没	mei
+发	fa
+当	dang
+没	mei
+成	cheng
+只	zhi
+作	zuo
+十	shi
+用	yong
+去	qu
+过	guo
+被	bei
+叫	jiao
+给	gei
+下	xia
+才	cai
+又	you
+与	yu
+由	you
+从	cong
+把	ba
+两	liang
+小	xiao
+本	ben
+见	jian
+看	kan
+现	xian
+天	tian
+如	ru
+好	hao
+它	ta
+第	di
+所	suo
+进	jin
+前	qian
+无	wu
+现	xian
+部	bu
+次	ci
+所	suo
+者	zhe
+想	xiang
+因	yin
+头	tou
+到	dao
+方	fang
+定	ding
+回	hui
+话	hua
+面	mian
+起	qi
+公	gong
+知	zhi
+合	he
+做	zuo
+明	ming
+号	hao
+机	ji
+力	li
+物	wu
+外	wai
+意	yi
+手	shou
+身	shen
+自	zi
+信	xin
+心	xin
+家	jia
+话	hua
+地	di
+开	kai
+次	ci
+事	shi
+间	jian
+正	zheng
+名	ming
+字	zi
+文	wen
+白	bai
+红	hong
+黑	hei
+绿	lv
+色	se
+水	shui
+火	huo
+风	feng
+雨	yu
+山	shan
+河	he
+花	hua
+草	cao
+树	shu
+木	mu
+日	ri
+月	yue
+年	nian
+今	jin
+明	ming
+昨	zuo
+天	tian
+早	zao
+晚	wan
+上	shang
+下	xia
+左	zuo
+右	you
+前	qian
+后	hou
+里	li
+外	wai
+你好	ni hao
+你们	ni men
+我们	wo men
+他们	ta men
+你好吗	ni hao ma
+再见	zai jian
+谢谢	xie xie
+对不起	dui bu qi
+没关系	mei guan xi
+什么	shen me
+为什么	wei shen me
+怎么	zen me
+现在	xian zai
+时间	shi jian
+朋友	peng you
+工作	gong zuo
+学习	xue xi
+喜欢	xi huan
+知道	zhi dao
+可以	ke yi
+没有	mei you
+因为	yin wei
+所以	suo yi
+但是	dan shi
+如果	ru guo
+已经	yi jing
+中国	zhong guo
+北京	bei jing
+上海	shang hai
+电话	dian hua
+手机	shou ji
+电脑	dian nao
+音乐	yin yue
+电影	dian ying
+快乐	kuai le
+幸福	xing fu
+平安	ping an
+健康	jian kang
+美丽	mei li
+世界	shi jie
+科学	ke xue
+社会	she hui
+家庭	jia ting
+老师	lao shi
+学生	xue sheng
+同志	tong zhi

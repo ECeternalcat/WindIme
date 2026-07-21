@@ -81,6 +81,10 @@ public class CandidateBar extends LinearLayout {
         return true;
     }
 
+    public int getFocusIndex() {
+        return focusIndex;
+    }
+
     public String consumeSelected() {
         if (candidates.length == 0 || focusIndex < 0 || focusIndex >= candidates.length) {
             return null;
