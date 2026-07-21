@@ -1,0 +1,32 @@
+{
+  "device_profile": "701KC_Factory_Preset",
+  "version": 1,
+  "mappings": [
+    { "scan_code": 0, "keycode": 8,  "action": "INPUT_KEY_1" },
+    { "scan_code": 0, "keycode": 9,  "action": "INPUT_KEY_2" },
+    { "scan_code": 0, "keycode": 10, "action": "INPUT_KEY_3" },
+    { "scan_code": 0, "keycode": 11, "action": "INPUT_KEY_4" },
+    { "scan_code": 0, "keycode": 12, "action": "INPUT_KEY_5" },
+    { "scan_code": 0, "keycode": 13, "action": "INPUT_KEY_6" },
+    { "scan_code": 0, "keycode": 14, "action": "INPUT_KEY_7" },
+    { "scan_code": 0, "keycode": 15, "action": "INPUT_KEY_8" },
+    { "scan_code": 0, "keycode": 16, "action": "INPUT_KEY_9" },
+    { "scan_code": 0, "keycode": 7,  "action": "INPUT_KEY_0" },
+    { "scan_code": 0, "keycode": 17, "action": "INPUT_KEY_STAR" },
+    { "scan_code": 0, "keycode": 18, "action": "INPUT_KEY_POUND" },
+
+    { "scan_code": 0, "keycode": 19, "action": "NAV_UP" },
+    { "scan_code": 0, "keycode": 20, "action": "NAV_DOWN" },
+    { "scan_code": 0, "keycode": 21, "action": "NAV_LEFT" },
+    { "scan_code": 0, "keycode": 22, "action": "NAV_RIGHT" },
+
+    { "scan_code": 0, "keycode": 23, "action": "CONFIRM_SELECTION" },
+    { "scan_code": 0, "keycode": 66, "action": "CONFIRM_SELECTION" },
+
+    { "scan_code": 0, "keycode": 67, "action": "BACKSPACE_DELETE" },
+
+    { "scan_code": 0, "keycode": 131, "action": "TOGGLE_LANG_MODE" },
+    { "scan_code": 0, "keycode": 133, "action": "SHOW_SYMBOL_PANEL" },
+    { "scan_code": 0, "keycode": 134, "action": "SWITCH_RIME_SCHEMA" }
+  ]
+}

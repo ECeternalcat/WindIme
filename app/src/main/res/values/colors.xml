@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="candidate_bg">#FFF2F2F2</color>
+    <color name="candidate_focus">#FF336699</color>
+    <color name="candidate_text">#FF111111</color>
+    <color name="candidate_focus_text">#FFFFFFFF</color>
+
+    <color name="symbol_bg">#FFEAEAEA</color>
+    <color name="symbol_focus">#FF336699</color>
+
+    <color name="primary_text">#FF111111</color>
+</resources>
