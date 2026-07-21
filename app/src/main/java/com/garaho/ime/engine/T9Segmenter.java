@@ -29,9 +29,38 @@ public final class T9Segmenter {
             if (a.size() != b.size()) {
                 return Integer.compare(a.size(), b.size());
             }
+            // Prefer the segmentation whose syllables have more dictionary
+            // entries (a commonness proxy): "64" -> ni (7 entries) over mi (6),
+            // so typing 64 surfaces 你 rather than alphabetically-first 米.
+            int wa = dictWeight(a);
+            int wb = dictWeight(b);
+            if (wa != wb) {
+                return Integer.compare(wb, wa);
+            }
             return joinKey(a).compareTo(joinKey(b));
         }
     };
+
+    private static int dictWeight(List<String> seg) {
+        int w = 0;
+        for (String s : seg) {
+            w += PinyinDictionary.lookup(s).size();
+        }
+        return w;
+    }
+
+    private static String pickCommonSyllable(List<String> syls) {
+        String best = syls.get(0);
+        int bestCount = PinyinDictionary.lookup(best).size();
+        for (String s : syls) {
+            int c = PinyinDictionary.lookup(s).size();
+            if (c > bestCount) {
+                best = s;
+                bestCount = c;
+            }
+        }
+        return best;
+    }
 
     private T9Segmenter() {
     }
@@ -115,6 +144,57 @@ public final class T9Segmenter {
             sb.append(seg.get(i));
         }
         return sb.toString();
+    }
+
+    /** Result of a best-effort (greedy leftmost) segmentation. */
+    public static final class Segment {
+        public final String phraseKey;
+        public final String remainder;
+
+        public Segment(String phraseKey, String remainder) {
+            this.phraseKey = phraseKey;
+            this.remainder = remainder;
+        }
+    }
+
+    /**
+     * Greedy leftmost-longest segmentation that tolerates an unsegmentable
+     * tail. Returns the pinyin phrase for the longest segmentable prefix and
+     * the leftover raw digits, so a T9 IME can show candidates for the valid
+     * prefix while the user is still mid-syllable (e.g. {@code "789"} &rarr;
+     * {@code phraseKey="pu", remainder="9"}) instead of dumping raw digits.
+     *
+     * At each position the longest syllable code is chosen; among syllables
+     * sharing a code, the first one present in the dictionary is preferred.
+     */
+    public static Segment bestEffort(String digits) {
+        if (digits == null || digits.isEmpty()) {
+            return new Segment("", "");
+        }
+        StringBuilder phrase = new StringBuilder();
+        int i = 0;
+        while (i < digits.length()) {
+            String chosen = null;
+            int chosenLen = 0;
+            int maxLen = Math.min(6, digits.length() - i);
+            for (int len = maxLen; len >= 1; len--) {
+                List<String> syls = PinyinSyllables.syllablesForT9(digits.substring(i, i + len));
+                if (!syls.isEmpty()) {
+                    chosen = pickCommonSyllable(syls);
+                    chosenLen = len;
+                    break;
+                }
+            }
+            if (chosen == null) {
+                break;
+            }
+            if (phrase.length() > 0) {
+                phrase.append('\'');
+            }
+            phrase.append(chosen);
+            i += chosenLen;
+        }
+        return new Segment(phrase.toString(), digits.substring(i));
     }
 
     /** Strip apostrophe separators so a phrase key can be fed to rime as letters. */

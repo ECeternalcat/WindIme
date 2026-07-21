@@ -182,15 +182,35 @@ public final class RimeEngine implements ImeEngine {
 
     /**
      * Re-segment the digit buffer and replay the resulting pinyin phrase into
-     * rime as a fresh key sequence. The previous composition is cleared first
-     * so each keystroke starts from a clean state.
+     * rime as a fresh key sequence. Uses best-effort (greedy prefix)
+     * segmentation so candidates appear for the longest valid syllable prefix
+     * even while the user is mid-syllable. Raw digits are never fed to rime
+     * (they would be echoed as ASCII); only segmented pinyin letters are sent.
      */
     private void pushPhraseToRime() {
         String buf = digits.toString();
-        String phraseKey = T9Segmenter.bestPhraseKey(buf);
-        composing = phraseKey;
+        // Prefer a full (dictionary-ranked) segmentation when one exists so
+        // ambiguous T9 input resolves correctly ("64426" -> ni'hao, not the
+        // alphabetically-first mi'hao). Fall back to a best-effort prefix for
+        // mid-syllable buffers ("789" -> pu + pending "9"). Raw digits are
+        // never forwarded to rime.
+        String phraseKey;
+        String remainder;
+        String fullPhrase = T9Segmenter.bestPhraseKey(buf);
+        if (!fullPhrase.isEmpty() && !fullPhrase.equals(buf)) {
+            phraseKey = fullPhrase;
+            remainder = "";
+        } else {
+            T9Segmenter.Segment seg = T9Segmenter.bestEffort(buf);
+            phraseKey = seg.phraseKey;
+            remainder = seg.remainder;
+        }
         String letters = T9Segmenter.phraseKeyToLetters(phraseKey);
-        Log.d(TAG, "pushPhrase: digits=" + buf + " phrase=" + phraseKey + " letters=" + letters);
+        composing = phraseKey.isEmpty()
+                ? buf
+                : (remainder.isEmpty() ? phraseKey : phraseKey + " " + remainder);
+        Log.d(TAG, "pushPhrase: digits=" + buf + " phrase=" + phraseKey
+                + " remainder=" + remainder + " letters=" + letters);
         try {
             Rime.clearRimeComposition();
         } catch (Throwable t) {
