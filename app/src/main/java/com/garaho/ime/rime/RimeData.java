@@ -27,7 +27,7 @@ public final class RimeData {
     private static final String SHARED_DIR_NAME = "rime";
     private static final String USER_DIR_NAME = "rime_user";
     private static final String VERSION_MARKER = ".data_version";
-    private static final String DATA_VERSION = "1";
+    private static final String DATA_VERSION = "2";
 
     private final File sharedDir;
     private final File userDir;

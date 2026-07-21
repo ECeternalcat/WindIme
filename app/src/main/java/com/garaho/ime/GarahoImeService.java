@@ -111,6 +111,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         InputAction action = keyMapper.resolve(keyCode, event.getScanCode());
+        if (action != InputAction.NONE) {
+            Log.d(TAG, "onKeyDown keyCode=" + keyCode + " scan=" + event.getScanCode() + " -> " + action + " (mode=" + mode + ")");
+        }
         if (action == InputAction.BACKSPACE_DELETE) {
             backspaceDownAt = event.getEventTime();
             if (poundDownAt != 0 && SystemClock.uptimeMillis() - poundDownAt < 50) {
@@ -325,6 +328,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     @Override
     public void onCandidatesChanged(List<String> candidates) {
+        Log.d(TAG, "onCandidatesChanged count=" + candidates.size());
         if (candidateBar != null) {
             candidateBar.setCandidates(candidates.toArray(new String[0]));
         }

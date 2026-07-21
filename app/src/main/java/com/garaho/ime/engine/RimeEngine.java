@@ -186,30 +186,56 @@ public final class RimeEngine implements ImeEngine {
      * so each keystroke starts from a clean state.
      */
     private void pushPhraseToRime() {
-        String phraseKey = T9Segmenter.bestPhraseKey(digits.toString());
+        String buf = digits.toString();
+        String phraseKey = T9Segmenter.bestPhraseKey(buf);
         composing = phraseKey;
-        Rime.clearRimeComposition();
         String letters = T9Segmenter.phraseKeyToLetters(phraseKey);
+        Log.d(TAG, "pushPhrase: digits=" + buf + " phrase=" + phraseKey + " letters=" + letters);
+        try {
+            Rime.clearRimeComposition();
+        } catch (Throwable t) {
+            Log.w(TAG, "clearRimeComposition failed: " + t);
+        }
         if (!letters.isEmpty()) {
-            Rime.simulateRimeKeySequence(letters);
+            boolean ok = false;
+            try {
+                ok = Rime.simulateRimeKeySequence(letters);
+            } catch (Throwable t) {
+                Log.w(TAG, "simulateRimeKeySequence threw: " + t);
+            }
+            Log.d(TAG, "simulateRimeKeySequence('" + letters + "') -> " + ok);
+            if (!ok) {
+                for (int i = 0; i < letters.length(); i++) {
+                    try {
+                        Rime.processRimeKey((int) letters.charAt(i), 0);
+                    } catch (Throwable t) {
+                        Log.w(TAG, "processRimeKey(" + letters.charAt(i) + ") threw: " + t);
+                        break;
+                    }
+                }
+            }
         }
         refresh();
     }
 
     private void refresh() {
         List<String> list = new ArrayList<>();
+        CandidateProto[] arr = null;
         try {
-            CandidateProto[] arr = Rime.getRimeCandidates(0, FETCH_LIMIT);
-            if (arr != null) {
-                for (CandidateProto c : arr) {
-                    if (c != null && c.text != null && !c.text.isEmpty()) {
-                        list.add(c.text);
-                    }
-                }
-            }
+            arr = Rime.getRimeCandidates(0, FETCH_LIMIT);
         } catch (Throwable t) {
             Log.w(TAG, "getRimeCandidates failed: " + t);
         }
+        if (arr != null) {
+            for (CandidateProto c : arr) {
+                if (c != null && c.text != null && !c.text.isEmpty()) {
+                    list.add(c.text);
+                }
+            }
+        }
+        Log.d(TAG, "getRimeCandidates -> count=" + (arr == null ? -1 : arr.length)
+                + " usable=" + list.size()
+                + (list.isEmpty() ? "" : " first=" + list.get(0)));
         candidates = list;
         CommitProto pending = safeCommit();
         if (listener != null) {

@@ -1,10 +1,12 @@
 # Rime schema: luna_pinyin (WindIme minimal preset)
-# A small, dependency-free pinyin schema that compiles the bundled
-# luna_pinyin.dict.yaml into a prism + table on first launch.
+# Bare-minimum pinyin: speller + abc_segmentor + script_translator.
+# No ascii_composer / punctuator / recognizer on purpose - WindIme handles
+# 中/英/数字/符号 modes itself, and stripping them removes the
+# "Missing ascii bindings" error and keeps the prism tiny.
 schema:
   schema_id: luna_pinyin
   name: 简拼
-  version: "0.1"
+  version: "0.2"
   author:
     - WindIme
   description: |
@@ -13,22 +15,16 @@ schema:
 
 engine:
   processors:
-    - ascii_composer
     - speller
-    - punctuator
     - selector
     - navigator
     - express_editor
   segmentors:
-    - ascii_segmentor
     - abc_segmentor
-    - punct_segmentor
     - fallback_segmentor
   translators:
-    - punct_translator
     - script_translator
   filters:
-    - simplifier
     - uniquifier
 
 speller:
@@ -44,39 +40,3 @@ translator:
   prism: luna_pinyin
   preedit_format:
     - "xform/([nl])v/$1ü/"
-
-punctuator:
-  half_shape:
-    "," : ，
-    "." : 。
-    "<" : 《
-    ">" : 》
-    "/" : ／
-    "?" : ？
-    ";" : ；
-    ":" : ：
-    "''" : { pair: [ "“", "”" ] }
-    "[" : 【
-    "]" : 】
-    "{" : ｛
-    "}" : ｝
-    "|" : ｜
-    "\\" : 、
-    "~" : ～
-    "!" : ！
-    "@" : ＠
-    "#" : ＃
-    "%" : ％
-    "$" : ￥
-    "^" : ……
-    "&" : ＆
-    "*" : ×
-    "(" : （
-    ")" : ）
-    "-" : "-"
-    "_" : ——
-    "=" : ＝
-    "+" : ＋
-
-simplifier:
-  option_name: simplification
