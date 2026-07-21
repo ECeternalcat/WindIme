@@ -185,7 +185,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     }
 
     private boolean handleDigit(InputAction action) {
-        int digit = action.ordinal() - InputAction.INPUT_KEY_0.ordinal();
+        int digit = action.digit();
         if (mode == InputMode.NUM) {
             if (digit >= 0 && digit <= 9) {
                 commitChar((char) ('0' + digit));

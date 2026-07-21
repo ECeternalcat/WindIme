@@ -46,4 +46,26 @@ public enum InputAction {
             return NONE;
         }
     }
+
+    /**
+     * @return the digit 0-9 this action represents, or {@code -1} if it is not
+     *         a T9 digit key. Resolved explicitly (not via ordinal) so it is
+     *         immune to enum declaration order - {@code INPUT_KEY_0} is listed
+     *         after {@code INPUT_KEY_1..9}, which previously broke the math.
+     */
+    public int digit() {
+        switch (this) {
+            case INPUT_KEY_0: return 0;
+            case INPUT_KEY_1: return 1;
+            case INPUT_KEY_2: return 2;
+            case INPUT_KEY_3: return 3;
+            case INPUT_KEY_4: return 4;
+            case INPUT_KEY_5: return 5;
+            case INPUT_KEY_6: return 6;
+            case INPUT_KEY_7: return 7;
+            case INPUT_KEY_8: return 8;
+            case INPUT_KEY_9: return 9;
+            default: return -1;
+        }
+    }
 }
