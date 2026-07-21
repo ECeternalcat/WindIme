@@ -26,9 +26,9 @@
         </service>
 
         <activity
-            android:name=".ui.SetupWizardActivity"
+            android:name=".ui.SettingsActivity"
             android:exported="true"
-            android:label="@string/title_setup_wizard"
+            android:label="@string/title_settings"
             android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -37,9 +37,35 @@
         </activity>
 
         <activity
-            android:name=".ui.SettingsActivity"
-            android:exported="true"
-            android:label="@string/title_settings" />
+            android:name=".ui.SetupWizardActivity"
+            android:exported="false"
+            android:label="@string/title_setup_wizard"
+            android:launchMode="singleTask" />
+
+        <activity
+            android:name=".settings.InputSettingsActivity"
+            android:exported="false"
+            android:label="@string/settings_input" />
+        <activity
+            android:name=".settings.ModeLoopActivity"
+            android:exported="false"
+            android:label="@string/input_mode_loop" />
+        <activity
+            android:name=".settings.KeymapSettingsActivity"
+            android:exported="false"
+            android:label="@string/settings_keymap" />
+        <activity
+            android:name=".settings.ResetSettingsActivity"
+            android:exported="false"
+            android:label="@string/settings_reset" />
+        <activity
+            android:name=".settings.UserDictActivity"
+            android:exported="false"
+            android:label="@string/settings_user_dict" />
+        <activity
+            android:name=".settings.PhraseActivity"
+            android:exported="false"
+            android:label="@string/settings_phrase" />
     </application>
 
 </manifest>

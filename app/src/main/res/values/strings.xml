@@ -25,4 +25,41 @@
     <string name="btn_enable_ime">启用 WindIme</string>
     <string name="btn_pick_ime">切换当前输入法</string>
     <string name="btn_start_wizard">开始按键校准</string>
+
+    <string name="menu_hint_nav">▲/▼ 移动焦点，OK 进入，BACK 返回</string>
+    <string name="menu_hint_toggle">▲/▼ 移动焦点，OK 勾选/取消，BACK 返回</string>
+
+    <string name="settings_input">输入设定</string>
+    <string name="settings_keymap">输入法与按键</string>
+    <string name="settings_user_dict">用户词典</string>
+    <string name="settings_phrase">定型文 / 常用短语</string>
+    <string name="settings_reset">重置设置</string>
+
+    <string name="input_mode_loop">模式循环</string>
+    <string name="input_key_feedback">按键反馈</string>
+    <string name="input_auto_caps">首字母大写</string>
+
+    <string name="mode_zh_t9">中文 T9</string>
+    <string name="mode_en_t9">英文 T9</string>
+    <string name="mode_num">数字 123</string>
+    <string name="mode_loop_keep_one">至少需要保留一个模式</string>
+
+    <string name="feedback_vibrate">震动</string>
+    <string name="feedback_sound">声音</string>
+    <string name="feedback_none">无</string>
+
+    <string name="value_on">开</string>
+    <string name="value_off">关</string>
+
+    <string name="keymap_wizard">按键校准向导</string>
+    <string name="keymap_indicator">显示状态指示器</string>
+    <string name="keymap_current_preset">当前预设</string>
+
+    <string name="reset_keymap">恢复默认按键映射</string>
+    <string name="reset_user_data">清空用户词库与历史</string>
+    <string name="reset_keymap_confirm">恢复出厂按键映射？</string>
+    <string name="reset_user_data_confirm">清空 RIME 用户数据与学习记录？</string>
+
+    <string name="user_dict_placeholder">用户词典管理（即将推出）</string>
+    <string name="phrase_placeholder">定型文 / 常用短语管理（即将推出）</string>
 </resources>

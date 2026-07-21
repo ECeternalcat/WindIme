@@ -9,6 +9,7 @@ import com.garaho.ime.engine.T9PinyinEngine;
 import com.garaho.ime.keymap.InputAction;
 import com.garaho.ime.keymap.KeyMapper;
 import com.garaho.ime.rime.RimeData;
+import com.garaho.ime.settings.GarahoPrefs;
 import com.garaho.ime.ui.CandidateBar;
 import com.garaho.ime.ui.SymbolPanel;
 
@@ -87,8 +88,14 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 new FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT));
-        candidateBar.setModeLabel(mode.label());
+        candidateBar.setModeLabel(indicatorLabel());
         return rootContainer;
+    }
+
+    /** Mode label for the candidate strip, empty when the user hides the indicator. */
+    private String indicatorLabel() {
+        boolean show = new GarahoPrefs(this).getShowIndicator();
+        return show ? mode.label() : "";
     }
 
     /**
@@ -278,18 +285,21 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     }
 
     /**
-     * Cycle 中 &rarr; 英 &rarr; 数字 &rarr; 中 internally (design doc §3.1.1),
-     * clearing any in-progress composing so stale candidates never leak across
-     * modes.
+     * Cycle through the modes the user enabled in Input Settings (design doc
+     * §1.1/§1.2), clearing any in-progress composing so stale candidates never
+     * leak across modes.
      */
     private void cycleLanguageMode() {
         ImeEngine previous = activeEngine();
         if (previous != null) {
             previous.reset();
         }
-        mode = mode.next();
+        List<InputMode> loop = new GarahoPrefs(this).getModeLoop();
+        int idx = loop.indexOf(mode);
+        int nextIdx = (idx >= 0) ? (idx + 1) % loop.size() : 0;
+        mode = loop.get(nextIdx);
         if (candidateBar != null) {
-            candidateBar.setModeLabel(mode.label());
+            candidateBar.setModeLabel(indicatorLabel());
             candidateBar.setCandidates(new String[0]);
             candidateBar.setComposingText("");
         }
