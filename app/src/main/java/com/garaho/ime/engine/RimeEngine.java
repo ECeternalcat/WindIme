@@ -59,13 +59,13 @@ public final class RimeEngine implements ImeEngine {
             return null;
         }
         try {
-            Rime.startupRime(sharedDir.getAbsolutePath(), userDir.getAbsolutePath(), version, true);
-            String schema = Rime.getCurrentRimeSchema();
-            Log.i(TAG, "Rime started; schema=" + schema);
-            if (schema == null || schema.isEmpty() || ".default".equals(schema)) {
-                Log.w(TAG, "No usable rime schema loaded; falling back to T9PinyinEngine");
-                return null;
-            }
+            // fullCheck=false: only rebuild the prism/table when stale. Schema
+            // deployment (start_maintenance) runs on librime's work thread and
+            // completes asynchronously, so do NOT probe getCurrentRimeSchema()
+            // here - it reliably returns ".default" before the work thread
+            // finishes even though deployment will succeed shortly after.
+            Rime.startupRime(sharedDir.getAbsolutePath(), userDir.getAbsolutePath(), version, false);
+            Log.i(TAG, "Rime started; schema deploys asynchronously on work thread");
             return new RimeEngine();
         } catch (Throwable t) {
             Log.e(TAG, "Rime startup failed", t);

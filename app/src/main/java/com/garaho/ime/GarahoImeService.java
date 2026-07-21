@@ -64,7 +64,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         rimeData.ensureExtracted(this);
 
         RimeEngine rimeEngine = RimeEngine.tryCreate(
-                rimeData.getSharedDir(), rimeData.getUserDir(), "0.2.0");
+                rimeData.getSharedDir(), rimeData.getUserDir(), "0.2.1");
         if (rimeEngine != null) {
             pinyinEngine = rimeEngine;
             Log.i(TAG, "Pinyin engine: native librime (RimeEngine)");
@@ -89,6 +89,23 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                         ViewGroup.LayoutParams.WRAP_CONTENT));
         candidateBar.setModeLabel(mode.label());
         return rootContainer;
+    }
+
+    /**
+     * Flip-phones expose a physical keyboard, so the platform default
+     * ({@code keyboard != NOKEYS && hardKeyboardHidden != YES}) hides the IME
+     * input view - observed as the candidate strip flashing for ~1s then
+     * vanishing. WindIme's candidate strip <b>is</b> the primary 0-Touch UI
+     * (design doc §4), so force it to stay shown whenever an editor is focused.
+     */
+    @Override
+    public boolean onEvaluateInputViewShown() {
+        return true;
+    }
+
+    @Override
+    public boolean onShowInputRequested(int flags, boolean configChange) {
+        return true;
     }
 
     @Override
