@@ -90,10 +90,34 @@ public class SetupWizardActivity extends Activity {
     }
 
     private void finishWizard() {
-        KeyMapConfig config = new KeyMapConfig();
+        // Start from the factory default so the T9 digit pad, D-Pad and
+        // enter/backspace stay mapped even though the wizard only captures a
+        // handful of function keys. Calibrated captures then override the
+        // matching action, and everything is written to user_keymap.json.
+        KeyMapConfig config = keyMapper.getConfig();
+        if (config == null) {
+            config = new KeyMapConfig();
+        }
+        for (KeyMapConfig.Mapping m : config.mappings) {
+            if (captured.containsKey(m.action)) {
+                m.scanCode = captured.get(m.action).scanCode;
+                m.keycode = captured.get(m.action).keycode;
+            }
+        }
+        for (KeyMapConfig.Mapping m : captured.values()) {
+            boolean present = false;
+            for (KeyMapConfig.Mapping existing : config.mappings) {
+                if (existing.action == m.action) {
+                    present = true;
+                    break;
+                }
+            }
+            if (!present) {
+                config.mappings.add(new KeyMapConfig.Mapping(m.scanCode, m.keycode, m.action));
+            }
+        }
         config.deviceProfile = "User_Calibrated";
         config.version = KeyMapConfig.DEFAULT_VERSION;
-        config.mappings.addAll(captured.values());
         boolean ok = keyMapper.saveUserConfig(config);
         promptView.setText(ok ? R.string.wizard_done_ok : R.string.wizard_done_fail);
         statusView.setText(config.deviceProfile + " (" + config.mappings.size() + ")");

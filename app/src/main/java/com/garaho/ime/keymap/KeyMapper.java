@@ -34,6 +34,38 @@ public final class KeyMapper {
     public static final String ASSET_DEFAULT = "garaho_keymap.json";
     public static final String USER_KEYMAP_FILE = "user_keymap.json";
 
+    /**
+     * Always-on fallback for standard Android keycodes (KEYCODE_0-9, STAR,
+     * POUND, DPAD_*, ENTER, DEL). A sparse {@code user_keymap.json} from the
+     * calibration wizard (which only captures function/nav keys) must never
+     * leave the T9 digit pad unresponsive, so these resolve regardless of what
+     * the loaded config happens to contain.
+     */
+    private static final Map<Integer, InputAction> STANDARD_ANDROID;
+    static {
+        Map<Integer, InputAction> s = new HashMap<>();
+        s.put(7,  InputAction.INPUT_KEY_0);
+        s.put(8,  InputAction.INPUT_KEY_1);
+        s.put(9,  InputAction.INPUT_KEY_2);
+        s.put(10, InputAction.INPUT_KEY_3);
+        s.put(11, InputAction.INPUT_KEY_4);
+        s.put(12, InputAction.INPUT_KEY_5);
+        s.put(13, InputAction.INPUT_KEY_6);
+        s.put(14, InputAction.INPUT_KEY_7);
+        s.put(15, InputAction.INPUT_KEY_8);
+        s.put(16, InputAction.INPUT_KEY_9);
+        s.put(17, InputAction.INPUT_KEY_STAR);
+        s.put(18, InputAction.INPUT_KEY_POUND);
+        s.put(19, InputAction.NAV_UP);
+        s.put(20, InputAction.NAV_DOWN);
+        s.put(21, InputAction.NAV_LEFT);
+        s.put(22, InputAction.NAV_RIGHT);
+        s.put(23, InputAction.CONFIRM_SELECTION);
+        s.put(66, InputAction.CONFIRM_SELECTION);
+        s.put(67, InputAction.BACKSPACE_DELETE);
+        STANDARD_ANDROID = java.util.Collections.unmodifiableMap(s);
+    }
+
     private final Context context;
     private KeyMapConfig config;
     private final Map<Integer, InputAction> keyCodeMap = new HashMap<>();
@@ -75,6 +107,10 @@ public final class KeyMapper {
             InputAction byScan = scanCodeMap.get(scanCode);
             if (byScan != null) {
                 return byScan;
+            }
+            InputAction standard = STANDARD_ANDROID.get(keyCode);
+            if (standard != null) {
+                return standard;
             }
             return InputAction.NONE;
         }
