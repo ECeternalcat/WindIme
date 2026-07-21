@@ -1,9 +1,12 @@
 package com.garaho.ime;
 
+import com.garaho.ime.engine.ChineseMultiTapEngine;
 import com.garaho.ime.engine.EngineListener;
+import com.garaho.ime.engine.EnglishMultiTapEngine;
 import com.garaho.ime.engine.EnglishT9Engine;
 import com.garaho.ime.engine.ImeEngine;
 import com.garaho.ime.engine.InputMode;
+import com.garaho.ime.engine.MultiTapSupport;
 import com.garaho.ime.engine.RimeEngine;
 import com.garaho.ime.engine.T9PinyinEngine;
 import com.garaho.ime.keymap.InputAction;
@@ -47,6 +50,8 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private KeyMapper keyMapper;
     private ImeEngine pinyinEngine;
     private EnglishT9Engine englishEngine;
+    private ChineseMultiTapEngine zhMultiTapEngine;
+    private EnglishMultiTapEngine enMultiTapEngine;
     private InputMode mode = InputMode.ZH;
 
     private CandidateBar candidateBar;
@@ -77,6 +82,12 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
         englishEngine = new EnglishT9Engine();
         englishEngine.setListener(this);
+
+        GarahoPrefs prefs = new GarahoPrefs(this);
+        zhMultiTapEngine = new ChineseMultiTapEngine(prefs);
+        zhMultiTapEngine.setListener(this);
+        enMultiTapEngine = new EnglishMultiTapEngine(prefs);
+        enMultiTapEngine.setListener(this);
     }
 
     @Override
@@ -147,6 +158,15 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private boolean handleAction(InputAction action) {
         if (action == InputAction.NONE) {
             return false;
+        }
+        // Multi-tap engines keep a cycling letter; finalise it before any
+        // unrelated action (literal commit, nav, confirm, mode switch, symbol)
+        // so the letter isn't lost. Cycling digits (2-9) handle finalize
+        // internally; backspace cancels the pending letter instead.
+        int cyclingDigit = action.digit();
+        boolean isCyclingDigit = cyclingDigit >= 2 && cyclingDigit <= 9;
+        if (action != InputAction.BACKSPACE_DELETE && !isCyclingDigit) {
+            flushMultiTapIfActive();
         }
         switch (action) {
             case INPUT_KEY_1:
@@ -276,11 +296,22 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         switch (mode) {
             case ZH:
                 return pinyinEngine;
+            case ZH_MTAP:
+                return zhMultiTapEngine;
             case EN:
                 return englishEngine;
+            case EN_MTAP:
+                return enMultiTapEngine;
             case NUM:
             default:
                 return null;
+        }
+    }
+
+    private void flushMultiTapIfActive() {
+        ImeEngine active = activeEngine();
+        if (active instanceof MultiTapSupport) {
+            ((MultiTapSupport) active).flushPending();
         }
     }
 

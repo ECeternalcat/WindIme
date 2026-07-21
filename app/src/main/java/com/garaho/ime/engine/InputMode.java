@@ -9,14 +9,20 @@ package com.garaho.ime.engine;
  */
 public enum InputMode {
     ZH,
+    ZH_MTAP,
     EN,
+    EN_MTAP,
     NUM;
 
     public InputMode next() {
         switch (this) {
             case ZH:
+                return ZH_MTAP;
+            case ZH_MTAP:
                 return EN;
             case EN:
+                return EN_MTAP;
+            case EN_MTAP:
                 return NUM;
             case NUM:
             default:
@@ -29,8 +35,12 @@ public enum InputMode {
         switch (this) {
             case ZH:
                 return "中";
+            case ZH_MTAP:
+                return "拼";
             case EN:
                 return "En";
+            case EN_MTAP:
+                return "Abc";
             case NUM:
             default:
                 return "123";

@@ -35,7 +35,9 @@ public class ModeLoopActivity extends Activity {
         ((android.widget.TextView) findViewById(R.id.menu_hint)).setText(R.string.menu_hint_toggle);
 
         allModes.add(InputMode.ZH);
+        allModes.add(InputMode.ZH_MTAP);
         allModes.add(InputMode.EN);
+        allModes.add(InputMode.EN_MTAP);
         allModes.add(InputMode.NUM);
         selected.addAll(prefs.getModeLoop());
 
@@ -103,7 +105,9 @@ public class ModeLoopActivity extends Activity {
     private String modeLabel(InputMode m) {
         switch (m) {
             case ZH: return getString(R.string.mode_zh_t9);
+            case ZH_MTAP: return getString(R.string.mode_zh_mtap);
             case EN: return getString(R.string.mode_en_t9);
+            case EN_MTAP: return getString(R.string.mode_en_mtap);
             case NUM: return getString(R.string.mode_num);
             default: return m.name();
         }

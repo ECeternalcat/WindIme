@@ -38,9 +38,12 @@
     <string name="input_mode_loop">模式循环</string>
     <string name="input_key_feedback">按键反馈</string>
     <string name="input_auto_caps">首字母大写</string>
+    <string name="input_mtap_interval">Multi-tap 间隔</string>
 
     <string name="mode_zh_t9">中文 T9</string>
+    <string name="mode_zh_mtap">中文 Multi-tap</string>
     <string name="mode_en_t9">英文 T9</string>
+    <string name="mode_en_mtap">英文 Multi-tap</string>
     <string name="mode_num">数字 123</string>
     <string name="mode_loop_keep_one">至少需要保留一个模式</string>
 

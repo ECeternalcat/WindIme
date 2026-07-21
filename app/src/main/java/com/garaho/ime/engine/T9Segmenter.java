@@ -205,6 +205,39 @@ public final class T9Segmenter {
         return phraseKey.replace("'", "");
     }
 
+    /**
+     * Segment a string of pinyin LETTERS (as typed in 中文 Multi-tap mode)
+     * greedily into the longest valid syllables, e.g. {@code "nihao"} &rarr;
+     * {@code [ni, hao]}. Letters that cannot start a syllable are skipped.
+     */
+    public static List<String> segmentLetters(String letters) {
+        List<String> out = new ArrayList<>();
+        if (letters == null || letters.isEmpty()) {
+            return out;
+        }
+        int i = 0;
+        while (i < letters.length()) {
+            String chosen = null;
+            int chosenLen = 0;
+            int maxLen = Math.min(6, letters.length() - i);
+            for (int len = maxLen; len >= 1; len--) {
+                String sub = letters.substring(i, i + len);
+                if (PinyinSyllables.isSyllable(sub)) {
+                    chosen = sub;
+                    chosenLen = len;
+                    break;
+                }
+            }
+            if (chosen == null) {
+                i++;
+                continue;
+            }
+            out.add(chosen);
+            i += chosenLen;
+        }
+        return out;
+    }
+
     public static Comparator<List<String>> phraseHitComparator() {
         return BY_PHRASE_HIT;
     }

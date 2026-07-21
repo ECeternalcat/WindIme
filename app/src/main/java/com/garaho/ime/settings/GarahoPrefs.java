@@ -26,6 +26,7 @@ public final class GarahoPrefs {
     public static final String KEY_FEEDBACK = "key_feedback";
     public static final String KEY_SHOW_INDICATOR = "show_indicator";
     public static final String KEY_AUTO_CAPS = "auto_caps";
+    public static final String KEY_MTAP_TIMEOUT = "mtap_timeout";
 
     public static final String FEEDBACK_VIBRATE = "vibrate";
     public static final String FEEDBACK_SOUND = "sound";
@@ -33,6 +34,9 @@ public final class GarahoPrefs {
 
     private static final String MODE_LOOP_DEFAULT = "ZH,EN,NUM";
     private static final String FEEDBACK_DEFAULT = FEEDBACK_VIBRATE;
+    private static final int MTAP_TIMEOUT_DEFAULT = 600;
+
+    public static final int[] MTAP_TIMEOUT_OPTIONS = { 300, 500, 600, 800, 1000 };
 
     private final SharedPreferences sp;
 
@@ -98,6 +102,14 @@ public final class GarahoPrefs {
 
     public void setAutoCapitalize(boolean value) {
         sp.edit().putBoolean(KEY_AUTO_CAPS, value).apply();
+    }
+
+    public int getMultiTapTimeout() {
+        return sp.getInt(KEY_MTAP_TIMEOUT, MTAP_TIMEOUT_DEFAULT);
+    }
+
+    public void setMultiTapTimeout(int ms) {
+        sp.edit().putInt(KEY_MTAP_TIMEOUT, ms).apply();
     }
 
     public static List<String> feedbackOptions() {

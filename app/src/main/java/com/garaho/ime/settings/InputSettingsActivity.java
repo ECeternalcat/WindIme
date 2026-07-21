@@ -37,11 +37,13 @@ public class InputSettingsActivity extends BaseMenuActivity {
         final String feedbackSummary = feedbackLabel(prefs.getFeedback());
         final String capsSummary = prefs.getAutoCapitalize()
                 ? getString(R.string.value_on) : getString(R.string.value_off);
+        final String mtapSummary = prefs.getMultiTapTimeout() + " ms";
 
         String[] items = new String[] {
                 getString(R.string.input_mode_loop) + ": " + modeSummary,
                 getString(R.string.input_key_feedback) + ": " + feedbackSummary,
                 getString(R.string.input_auto_caps) + ": " + capsSummary,
+                getString(R.string.input_mtap_interval) + ": " + mtapSummary,
         };
         setMenuItems(items, new AdapterView.OnItemClickListener() {
             @Override
@@ -58,6 +60,10 @@ public class InputSettingsActivity extends BaseMenuActivity {
                         prefs.setAutoCapitalize(!prefs.getAutoCapitalize());
                         rebuild();
                         break;
+                    case 3:
+                        cycleMultiTapTimeout();
+                        rebuild();
+                        break;
                     default:
                         break;
                 }
@@ -70,6 +76,20 @@ public class InputSettingsActivity extends BaseMenuActivity {
         int idx = options.indexOf(prefs.getFeedback());
         idx = (idx + 1) % options.size();
         prefs.setFeedback(options.get(idx));
+    }
+
+    private void cycleMultiTapTimeout() {
+        int[] opts = GarahoPrefs.MTAP_TIMEOUT_OPTIONS;
+        int cur = prefs.getMultiTapTimeout();
+        int idx = 0;
+        for (int i = 0; i < opts.length; i++) {
+            if (opts[i] == cur) {
+                idx = i;
+                break;
+            }
+        }
+        idx = (idx + 1) % opts.length;
+        prefs.setMultiTapTimeout(opts[idx]);
     }
 
     private String summarizeModes(List<InputMode> modes) {
