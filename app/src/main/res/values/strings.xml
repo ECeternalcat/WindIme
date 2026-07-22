@@ -38,6 +38,13 @@
     <string name="settings_reset">重置设置</string>
 
     <string name="input_mode_loop">模式循环</string>
+    <string name="input_default_ime">设置默认输入法</string>
+
+    <string name="ime_setup_title">设置默认输入法</string>
+    <string name="ime_setup_step1">启用 WindIme（系统输入法设置）</string>
+    <string name="ime_setup_step2">切换到 WindIme</string>
+    <string name="ime_setup_done">已完成</string>
+    <string name="ime_setup_pending">未完成</string>
     <string name="input_key_feedback">按键反馈</string>
     <string name="input_auto_caps">首字母大写</string>
     <string name="input_mtap_interval">Multi-tap 间隔</string>

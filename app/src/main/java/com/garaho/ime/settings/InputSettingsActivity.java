@@ -40,6 +40,7 @@ public class InputSettingsActivity extends BaseMenuActivity {
         final String mtapSummary = prefs.getMultiTapTimeout() + " ms";
 
         String[] items = new String[] {
+                getString(R.string.input_default_ime),
                 getString(R.string.input_mode_loop) + ": " + modeSummary,
                 getString(R.string.input_key_feedback) + ": " + feedbackSummary,
                 getString(R.string.input_auto_caps) + ": " + capsSummary,
@@ -50,17 +51,20 @@ public class InputSettingsActivity extends BaseMenuActivity {
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                 switch (position) {
                     case 0:
-                        startActivity(new Intent(InputSettingsActivity.this, ModeLoopActivity.class));
+                        startActivity(new Intent(InputSettingsActivity.this, ImeSetupActivity.class));
                         break;
                     case 1:
+                        startActivity(new Intent(InputSettingsActivity.this, ModeLoopActivity.class));
+                        break;
+                    case 2:
                         cycleFeedback();
                         rebuild();
                         break;
-                    case 2:
+                    case 3:
                         prefs.setAutoCapitalize(!prefs.getAutoCapitalize());
                         rebuild();
                         break;
-                    case 3:
+                    case 4:
                         cycleMultiTapTimeout();
                         rebuild();
                         break;

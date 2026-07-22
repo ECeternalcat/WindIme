@@ -47,6 +47,10 @@
             android:exported="false"
             android:label="@string/settings_input" />
         <activity
+            android:name=".settings.ImeSetupActivity"
+            android:exported="false"
+            android:label="@string/ime_setup_title" />
+        <activity
             android:name=".settings.ModeLoopActivity"
             android:exported="false"
             android:label="@string/input_mode_loop" />
