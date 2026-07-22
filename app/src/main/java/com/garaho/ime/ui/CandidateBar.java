@@ -26,6 +26,7 @@ public class CandidateBar extends LinearLayout {
 
     private TextView composingPreview;
     private ViewGroup candidateRow;
+    private ViewGroup modeBar;
     private String[] candidates = new String[0];
     private int focusIndex = 0;
     private boolean gridExpanded = false;
@@ -47,7 +48,45 @@ public class CandidateBar extends LinearLayout {
         LayoutInflater.from(getContext()).inflate(R.layout.view_candidate_bar_children, this, true);
         composingPreview = findViewById(R.id.composing_preview);
         candidateRow = findViewById(R.id.candidate_row);
+        modeBar = findViewById(R.id.mode_bar);
         renderHeader();
+    }
+
+    /**
+     * iWnn-style quick-switch mode bar: shows one button per entry, highlights
+     * the active one. Used while composing is empty (design doc §1 / SettingsPage
+     * quick-select). Set {@code labels} empty to hide.
+     */
+    public void setModeBar(String[] labels, int highlightIndex) {
+        modeBar.removeAllViews();
+        if (labels == null || labels.length == 0) {
+            return;
+        }
+        int hi = (highlightIndex < 0 || highlightIndex >= labels.length) ? 0 : highlightIndex;
+        for (int i = 0; i < labels.length; i++) {
+            TextView tv = new TextView(getContext());
+            tv.setText(labels[i]);
+            tv.setGravity(android.view.Gravity.CENTER);
+            tv.setPadding(28, 14, 28, 14);
+            tv.setTextSize(18);
+            if (i == hi) {
+                tv.setBackgroundColor(Color.rgb(0x33, 0x66, 0x99));
+                tv.setTextColor(Color.WHITE);
+                tv.setTypeface(tv.getTypeface(), android.graphics.Typeface.BOLD);
+            } else {
+                tv.setBackgroundColor(Color.TRANSPARENT);
+                tv.setTextColor(Color.BLACK);
+            }
+            LayoutParams lp = new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            modeBar.addView(tv, lp);
+        }
+        invalidate();
+    }
+
+    public void showModeBar(boolean show) {
+        modeBar.setVisibility(show ? View.VISIBLE : View.GONE);
+        composingPreview.setVisibility(show ? View.GONE : View.VISIBLE);
+        candidateRow.setVisibility(show ? View.GONE : View.VISIBLE);
     }
 
     public void setModeLabel(String label) {

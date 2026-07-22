@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <merge xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <LinearLayout
+        android:id="@+id/mode_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:background="@color/candidate_bg"
+        android:padding="4dp" />
+
     <TextView
         android:id="@+id/composing_preview"
         android:layout_width="match_parent"

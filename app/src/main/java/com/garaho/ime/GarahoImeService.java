@@ -58,6 +58,12 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private SymbolPanel symbolPanel;
     private FrameLayout rootContainer;
 
+    private boolean showModeBar = true;
+    private String[] barLabels = null;
+    private InputMode[] barModes = null;
+    private int modeBarIndex = 0;
+    private CharSequence currentComposing = "";
+
     private long backspaceDownAt;
     private long poundDownAt;
 
@@ -116,7 +122,14 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT));
         candidateBar.setModeLabel(indicatorLabel());
+        enterModeBar();
         return rootContainer;
+    }
+
+    @Override
+    public void onStartInputView(android.view.inputmethod.EditorInfo info, boolean restarting) {
+        super.onStartInputView(info, restarting);
+        enterModeBar();
     }
 
     /** Mode label for the candidate strip, empty when the user hides the indicator. */
@@ -144,6 +157,16 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        // Two-stage BACK (doc §1 / iWnn quick-select): while composing, first
+        // BACK cancels composing and returns to the mode bar; a second BACK
+        // (when already on the mode bar) falls through to dismiss the IME.
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (!showModeBar) {
+                enterModeBar();
+                return true;
+            }
+            return false;
+        }
         InputAction action = keyMapper.resolve(keyCode, event.getScanCode());
         if (action != InputAction.NONE) {
             Log.d(TAG, "onKeyDown keyCode=" + keyCode + " scan=" + event.getScanCode() + " -> " + action + " (mode=" + mode + ")");
@@ -175,10 +198,12 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (action == InputAction.NONE) {
             return false;
         }
-        // Multi-tap engines keep a cycling letter; finalise it before any
-        // unrelated action (literal commit, nav, confirm, mode switch, symbol)
-        // so the letter isn't lost. Cycling digits (2-9) handle finalize
-        // internally; backspace cancels the pending letter instead.
+        if (showModeBar) {
+            return handleModeBarAction(action);
+        }
+        // Composing state: multi-tap engines keep a cycling letter; finalise it
+        // before any unrelated action so the letter isn't lost. Cycling digits
+        // (2-9) handle finalize internally; backspace cancels the pending letter.
         int cyclingDigit = action.digit();
         boolean isCyclingDigit = cyclingDigit >= 2 && cyclingDigit <= 9;
         if (action != InputAction.BACKSPACE_DELETE && !isCyclingDigit) {
@@ -222,6 +247,43 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             case SWITCH_RIME_SCHEMA:
                 return false;
 
+            default:
+                return false;
+        }
+    }
+
+    /** Key routing while the iWnn-style mode bar is up (composing empty). */
+    private boolean handleModeBarAction(InputAction action) {
+        switch (action) {
+            case NAV_LEFT:
+                moveModeBar(-1);
+                return true;
+            case NAV_RIGHT:
+                moveModeBar(1);
+                return true;
+            case CONFIRM_SELECTION:
+                return confirmModeBar();
+            case TOGGLE_LANG_MODE:
+                advanceModeBarToNextInputMode();
+                return true;
+            case SHOW_SYMBOL_PANEL:
+                showSymbolPanel();
+                return true;
+            case BACKSPACE_DELETE:
+                return false;
+            case INPUT_KEY_0:
+            case INPUT_KEY_1:
+            case INPUT_KEY_2:
+            case INPUT_KEY_3:
+            case INPUT_KEY_4:
+            case INPUT_KEY_5:
+            case INPUT_KEY_6:
+            case INPUT_KEY_7:
+            case INPUT_KEY_8:
+            case INPUT_KEY_9:
+            case INPUT_KEY_STAR:
+            case INPUT_KEY_POUND:
+                return startTypingFromModeBar(action);
             default:
                 return false;
         }
@@ -281,6 +343,10 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private boolean handleBackspace() {
         ImeEngine active = activeEngine();
         if (active != null && active.backspace()) {
+            // backspaced out of the whole composing -> back to the mode bar
+            if (currentComposing.length() == 0) {
+                enterModeBar();
+            }
             return true;
         }
         android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
@@ -329,6 +395,121 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (active instanceof MultiTapSupport) {
             ((MultiTapSupport) active).flushPending();
         }
+    }
+
+    /**
+     * Build the mode-bar entries from the user's configured mode loop plus a
+     * trailing 符 (symbol/phrase) entry. {@code barModes[i] == null} marks 符.
+     */
+    private void buildModeBar() {
+        List<InputMode> loop = new GarahoPrefs(this).getModeLoop();
+        barLabels = new String[loop.size() + 1];
+        barModes = new InputMode[loop.size() + 1];
+        for (int i = 0; i < loop.size(); i++) {
+            barModes[i] = loop.get(i);
+            barLabels[i] = loop.get(i).label();
+        }
+        barModes[loop.size()] = null;
+        barLabels[loop.size()] = getString(R.string.mode_bar_symbol);
+        modeBarIndex = 0;
+        for (int i = 0; i < barModes.length; i++) {
+            if (barModes[i] == mode) {
+                modeBarIndex = i;
+                break;
+            }
+        }
+    }
+
+    /** Show the mode bar (composing cleared / input started / BACK pressed). */
+    private void enterModeBar() {
+        buildModeBar();
+        showModeBar = true;
+        ImeEngine active = activeEngine();
+        if (active != null) {
+            active.reset();
+        }
+        currentComposing = "";
+        if (candidateBar != null) {
+            candidateBar.setCandidates(new String[0]);
+            candidateBar.setComposingText("");
+            candidateBar.showModeBar(true);
+            candidateBar.setModeBar(barLabels, modeBarIndex);
+        }
+    }
+
+    private void exitModeBar() {
+        showModeBar = false;
+        if (candidateBar != null) {
+            candidateBar.showModeBar(false);
+            candidateBar.setModeLabel(indicatorLabel());
+        }
+    }
+
+    private void moveModeBar(int delta) {
+        if (barLabels == null || barLabels.length == 0) {
+            return;
+        }
+        modeBarIndex = (modeBarIndex + delta + barLabels.length) % barLabels.length;
+        applyModeBarSelection();
+    }
+
+    /** Cycling onto an input mode activates it immediately; 符 only highlights. */
+    private void applyModeBarSelection() {
+        InputMode m = (barModes != null && modeBarIndex < barModes.length) ? barModes[modeBarIndex] : null;
+        if (m != null && m != mode) {
+            ImeEngine prev = activeEngine();
+            if (prev != null) {
+                prev.reset();
+            }
+            mode = m;
+            currentComposing = "";
+        }
+        if (candidateBar != null) {
+            candidateBar.setModeBar(barLabels, modeBarIndex);
+        }
+    }
+
+    private boolean confirmModeBar() {
+        if (barModes == null || modeBarIndex >= barModes.length) {
+            return false;
+        }
+        if (barModes[modeBarIndex] == null) {
+            showSymbolPanel();
+        }
+        return true;
+    }
+
+    /** TOGGLE advances to the next input mode, skipping the 符 entry. */
+    private void advanceModeBarToNextInputMode() {
+        if (barModes == null) {
+            return;
+        }
+        for (int i = 1; i <= barModes.length; i++) {
+            int idx = (modeBarIndex + i) % barModes.length;
+            if (barModes[idx] != null) {
+                modeBarIndex = idx;
+                applyModeBarSelection();
+                return;
+            }
+        }
+    }
+
+    /**
+     * A digit was pressed on the mode bar: lock in the highlighted input mode
+     * and begin composing (or, in NUM mode, commit the digit directly while
+     * staying on the mode bar since NUM has no composing state).
+     */
+    private boolean startTypingFromModeBar(InputAction action) {
+        InputMode m = (barModes != null && modeBarIndex < barModes.length) ? barModes[modeBarIndex] : null;
+        if (m == null) {
+            return false; // 符 highlighted -> ignore digit
+        }
+        mode = m;
+        if (m == InputMode.NUM) {
+            return handleDigit(action);
+        }
+        exitModeBar();
+        return handleDigit(action);
     }
 
     /**
@@ -381,6 +562,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     @Override
     public void onComposingChanged(CharSequence composing) {
+        currentComposing = composing;
         if (candidateBar != null) {
             candidateBar.setComposingText(composing);
         }

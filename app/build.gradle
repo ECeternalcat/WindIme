@@ -10,8 +10,8 @@ android {
         applicationId "com.garaho.ime"
         minSdk 21
         targetSdk 28
-        versionCode 11
-        versionName "0.3.3"
+        versionCode 12
+        versionName "0.4.0"
 
         // Direct boot aware for FDE/FBE devices (doc 5.1)
         // Declared in manifest via android:directBootAware="true"

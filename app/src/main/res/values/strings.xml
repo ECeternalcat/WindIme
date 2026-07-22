@@ -8,6 +8,8 @@
     <string name="subtype_en_US">English T9</string>
 
     <string name="symbol_page_format">符号选择 [%1$d/%2$d 页]</string>
+    <string name="symbol_tab_symbol">▶ 符号 | 定型文   (↑切换页签)</string>
+    <string name="symbol_tab_phrase">符号 | ▶ 定型文   (↑切换页签)</string>
     <string name="wizard_press_action_prompt">请按下【%1$s】键</string>
     <string name="wizard_step_format">步骤 %1$d / %2$d</string>
     <string name="wizard_done_ok">校准完成，已保存为 user_keymap.json</string>
@@ -45,6 +47,7 @@
     <string name="mode_en_t9">英文 T9</string>
     <string name="mode_en_mtap">英文 Multi-tap</string>
     <string name="mode_num">数字 123</string>
+    <string name="mode_bar_symbol">符</string>
     <string name="mode_loop_keep_one">至少需要保留一个模式</string>
 
     <string name="feedback_vibrate">震动</string>
