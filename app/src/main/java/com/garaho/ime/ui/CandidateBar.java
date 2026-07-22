@@ -67,8 +67,11 @@ public class CandidateBar extends LinearLayout {
             TextView tv = new TextView(getContext());
             tv.setText(labels[i]);
             tv.setGravity(android.view.Gravity.CENTER);
-            tv.setPadding(28, 14, 28, 14);
-            tv.setTextSize(18);
+            tv.setSingleLine(true);
+            tv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            tv.setPadding(6, 8, 6, 8);
+            tv.setTextSize(13);
+            tv.setMinimumHeight(0);
             if (i == hi) {
                 tv.setBackgroundColor(Color.rgb(0x33, 0x66, 0x99));
                 tv.setTextColor(Color.WHITE);
@@ -162,8 +165,12 @@ public class CandidateBar extends LinearLayout {
             TextView tv = new TextView(getContext());
             String label = (i + 1) + "." + candidates[i];
             tv.setText(label);
-            tv.setPadding(24, 12, 24, 12);
-            tv.setTextSize(16);
+            tv.setGravity(android.view.Gravity.CENTER);
+            tv.setSingleLine(true);
+            tv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            tv.setPadding(6, 8, 6, 8);
+            tv.setTextSize(13);
+            tv.setMinimumHeight(0);
             if (i == focusIndex) {
                 tv.setBackgroundColor(Color.rgb(0x33, 0x66, 0x99));
                 tv.setTextColor(Color.WHITE);
