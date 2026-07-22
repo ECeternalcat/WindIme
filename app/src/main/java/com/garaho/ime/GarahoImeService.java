@@ -277,7 +277,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 showSymbolPanel();
                 return true;
             case BACKSPACE_DELETE:
-                return false;
+                return deleteFromEditor();
             case INPUT_KEY_0:
             case INPUT_KEY_1:
             case INPUT_KEY_2:
@@ -350,23 +350,24 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private boolean handleBackspace() {
         ImeEngine active = activeEngine();
         if (active != null && active.backspace()) {
-            // backspaced out of the whole composing -> back to the mode bar
-            if (currentComposing.length() == 0) {
-                enterModeBar();
-            }
             return true;
         }
+        return deleteFromEditor();
+    }
+
+    /** Delete one char (or the active selection) from the editor via the InputConnection. */
+    private boolean deleteFromEditor() {
         android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
-        if (ic != null) {
-            CharSequence sel = ic.getSelectedText(0);
-            if (sel != null && sel.length() > 0) {
-                ic.deleteSurroundingText(0, sel.length());
-            } else {
-                ic.deleteSurroundingText(1, 0);
-            }
-            return true;
+        if (ic == null) {
+            return false;
         }
-        return false;
+        CharSequence sel = ic.getSelectedText(0);
+        if (sel != null && sel.length() > 0) {
+            ic.deleteSurroundingText(0, sel.length());
+        } else {
+            ic.deleteSurroundingText(1, 0);
+        }
+        return true;
     }
 
     private boolean confirmSelection() {

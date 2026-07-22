@@ -103,9 +103,9 @@ public final class RimeEngine implements ImeEngine {
             return false;
         }
         if (digits.length() == 0) {
-            Rime.processRimeKey(0xFF08, 0);
-            refresh();
-            return true;
+            // Nothing composing: hand the backspace back to the host so it can
+            // delete already-committed text via the InputConnection.
+            return false;
         }
         digits.deleteCharAt(digits.length() - 1);
         pushPhraseToRime();
