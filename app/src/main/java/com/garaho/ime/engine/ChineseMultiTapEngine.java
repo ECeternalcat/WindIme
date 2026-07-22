@@ -29,7 +29,7 @@ public final class ChineseMultiTapEngine implements ImeEngine, MultiTapSupport {
     private int pendingIndex = 0;
     private final StringBuilder pinyin = new StringBuilder();
     private List<String> candidates = Collections.emptyList();
-    private String composing = "";
+    private CharSequence composing = "";
 
     private final Runnable timeoutRunnable = new Runnable() {
         @Override
@@ -87,7 +87,12 @@ public final class ChineseMultiTapEngine implements ImeEngine, MultiTapSupport {
         String pending = (pendingDigit >= 0)
                 ? String.valueOf(MultiTapCore.letter(pendingDigit, pendingIndex))
                 : "";
-        composing = pinyin.toString() + pending;
+        String base = pinyin.toString() + pending;
+        int highlightStart = pinyin.length();
+        int highlightEnd = highlightStart + pending.length();
+        composing = pending.isEmpty()
+                ? base
+                : MultiTapHighlight.apply(base, highlightStart, highlightEnd);
         candidates = lookup(pinyin.toString());
         fire();
     }
@@ -175,7 +180,7 @@ public final class ChineseMultiTapEngine implements ImeEngine, MultiTapSupport {
     }
 
     public String getComposing() {
-        return composing;
+        return composing == null ? "" : composing.toString();
     }
 
     private int timeoutMs() {

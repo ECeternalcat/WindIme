@@ -9,10 +9,12 @@ import java.util.List;
 public interface EngineListener {
 
     /**
-     * @param composing human-readable composing text (e.g. {@code "ni'hao"});
-     *                  empty string means the buffer is cleared.
+     * @param composing human-readable composing text (e.g. {@code "ni'hao"}).
+     *                  May be a {@link android.text.Spanned} carrying inline
+     *                  styling (Multi-tap engines highlight the cycling letter).
+     *                  Empty string means the buffer is cleared.
      */
-    void onComposingChanged(String composing);
+    void onComposingChanged(CharSequence composing);
 
     /** @param candidates ordered candidate list; empty when nothing matches. */
     void onCandidatesChanged(List<String> candidates);

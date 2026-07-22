@@ -94,7 +94,15 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     public View onCreateInputView() {
         LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
         rootContainer = new FrameLayout(this);
+        // The input view must not steal focus from the host editor - if it
+        // does, getCurrentInputConnection() can go null and commits silently
+        // drop. Keep it non-focusable; key events still arrive via onKeyDown.
+        rootContainer.setFocusable(false);
+        rootContainer.setFocusableInTouchMode(false);
         candidateBar = (CandidateBar) inflater.inflate(R.layout.view_candidate_bar, rootContainer, false);
+        candidateBar.setFocusable(false);
+        candidateBar.setFocusableInTouchMode(false);
+        candidateBar.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
         rootContainer.addView(candidateBar,
                 new FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -355,13 +363,16 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     private void commitTextToEditor(CharSequence text) {
         android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
-        if (ic != null) {
-            ic.commitText(text, 1);
+        if (ic == null) {
+            Log.w(TAG, "commitText SKIPPED: InputConnection null (no focused editor) text=\"" + text + "\"");
+            return;
         }
+        boolean ok = ic.commitText(text, 1);
+        Log.d(TAG, "commitText ok=" + ok + " text=\"" + text + "\"");
     }
 
     @Override
-    public void onComposingChanged(String composing) {
+    public void onComposingChanged(CharSequence composing) {
         if (candidateBar != null) {
             candidateBar.setComposingText(composing);
         }

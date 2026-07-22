@@ -30,7 +30,7 @@ public class CandidateBar extends LinearLayout {
     private int focusIndex = 0;
     private boolean gridExpanded = false;
     private String modeLabel = "中";
-    private String composingText = "";
+    private CharSequence composingText = "";
 
     public CandidateBar(Context context) {
         super(context);
@@ -56,17 +56,17 @@ public class CandidateBar extends LinearLayout {
     }
 
     public void setComposingText(CharSequence text) {
-        this.composingText = text == null ? "" : text.toString();
+        this.composingText = text == null ? "" : text;
         renderHeader();
     }
 
     private void renderHeader() {
-        StringBuilder sb = new StringBuilder();
+        android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder();
         if (modeLabel.length() > 0) {
             sb.append('[').append(modeLabel).append(']').append(' ');
         }
         sb.append(composingText);
-        composingPreview.setText(sb.toString());
+        composingPreview.setText(sb);
     }
 
     public void setCandidates(String[] candidates) {

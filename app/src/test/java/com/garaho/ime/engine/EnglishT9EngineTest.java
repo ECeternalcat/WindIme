@@ -16,7 +16,7 @@ public class EnglishT9EngineTest {
         List<String> candidates = Collections.emptyList();
         String lastCommitted;
 
-        @Override public void onComposingChanged(String composing) { this.composing = composing; }
+        @Override public void onComposingChanged(CharSequence composing) { this.composing = composing.toString(); }
         @Override public void onCandidatesChanged(List<String> candidates) { this.candidates = candidates; }
         @Override public void onCommit(String text) { this.lastCommitted = text; }
     }

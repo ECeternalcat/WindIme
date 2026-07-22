@@ -25,7 +25,7 @@ public final class EnglishMultiTapEngine implements ImeEngine, MultiTapSupport {
 
     private int pendingDigit = -1;
     private int pendingIndex = 0;
-    private String composing = "";
+    private CharSequence composing = "";
 
     private final Runnable timeoutRunnable = new Runnable() {
         @Override
@@ -56,7 +56,8 @@ public final class EnglishMultiTapEngine implements ImeEngine, MultiTapSupport {
             pendingDigit = digit;
             pendingIndex = 0;
         }
-        composing = String.valueOf(MultiTapCore.letter(digit, pendingIndex));
+        composing = MultiTapHighlight.apply(
+                String.valueOf(MultiTapCore.letter(digit, pendingIndex)), 0, 1);
         fireComposing();
         handler.postDelayed(timeoutRunnable, timeoutMs());
         return true;
@@ -77,7 +78,7 @@ public final class EnglishMultiTapEngine implements ImeEngine, MultiTapSupport {
         }
         pendingDigit = -1;
         pendingIndex = 0;
-        if (!composing.isEmpty()) {
+        if (composing.length() > 0) {
             composing = "";
             fireComposing();
         }
@@ -107,7 +108,7 @@ public final class EnglishMultiTapEngine implements ImeEngine, MultiTapSupport {
         handler.removeCallbacks(timeoutRunnable);
         pendingDigit = -1;
         pendingIndex = 0;
-        if (!composing.isEmpty()) {
+        if (composing.length() > 0) {
             composing = "";
             fireComposing();
         }
@@ -119,7 +120,7 @@ public final class EnglishMultiTapEngine implements ImeEngine, MultiTapSupport {
     }
 
     public String getComposing() {
-        return composing;
+        return composing == null ? "" : composing.toString();
     }
 
     private int timeoutMs() {

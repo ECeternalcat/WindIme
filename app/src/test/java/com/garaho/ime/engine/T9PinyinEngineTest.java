@@ -13,7 +13,7 @@ public class T9PinyinEngineTest {
         java.util.List<String> candidates = java.util.Collections.emptyList();
         String lastCommitted;
 
-        @Override public void onComposingChanged(String composing) { this.composing = composing; }
+        @Override public void onComposingChanged(CharSequence composing) { this.composing = composing.toString(); }
         @Override public void onCandidatesChanged(java.util.List<String> candidates) { this.candidates = candidates; }
         @Override public void onCommit(String text) { this.lastCommitted = text; }
     }
