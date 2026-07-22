@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
+    android:layout_height="wrap_content"
     android:orientation="vertical"
     android:background="@color/symbol_bg">
 
@@ -9,19 +9,19 @@
         android:id="@+id/symbol_page_label"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="10dp"
-        android:textSize="16sp"
+        android:padding="6dp"
+        android:singleLine="true"
+        android:ellipsize="end"
+        android:textSize="13sp"
         android:textColor="@color/primary_text" />
 
     <GridView
         android:id="@+id/symbol_grid"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:padding="6dp"
-        android:verticalSpacing="6dp"
-        android:horizontalSpacing="6dp"
-        android:stretchMode="columnWidth"
-        android:focusable="true" />
+        android:layout_height="160dp"
+        android:padding="4dp"
+        android:verticalSpacing="4dp"
+        android:horizontalSpacing="4dp"
+        android:stretchMode="columnWidth" />
 
 </LinearLayout>

@@ -2,16 +2,16 @@ package com.garaho.ime.ui;
 
 import android.content.Context;
 import android.graphics.Color;
-import android.graphics.PixelFormat;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.WindowManager;
-import android.widget.GridView;
-import android.widget.TextView;
 import android.widget.BaseAdapter;
+import android.widget.FrameLayout;
+import android.widget.GridView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import com.garaho.ime.R;
 import com.garaho.ime.user.PhraseStore;
@@ -20,11 +20,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Full-screen symbol matrix (design doc §4.2) with a 符号 / 定型文 tab header
- * (design doc §2.4 quick-insert). Pops up as an overlay that intercepts all
- * D-Pad events: 4-way movement shifts focus across the 2D grid; pressing UP
- * past the first row cycles the tab; OK commits the highlighted item and
- * dismisses. 0-Touch only.
+ * Symbol/phrase picker (design doc §4.2 + §2.4).
+ *
+ * <p>Implemented as a child overlay of the IME input view (a separate
+ * WindowManager window does not reliably receive key events inside an IME).
+ * The host {@code GarahoImeService} routes D-Pad / OK / BACK to
+ * {@link #handleKey(int)} while {@link #isShowing()} is true, making the panel
+ * effectively modal. 符号 and 定型文 share the panel; UP past the first row
+ * cycles the tab.
  */
 public class SymbolPanel {
 
@@ -44,7 +47,7 @@ public class SymbolPanel {
 
     private final Context context;
     private final OnSymbolPicked callback;
-    private WindowManager windowManager;
+    private ViewGroup parent;
     private View root;
     private GridView grid;
     private TextView pageTitle;
@@ -52,6 +55,7 @@ public class SymbolPanel {
     private int page = 0;
     private int focus = 0;
     private boolean showing;
+    private boolean attached;
     private List<String> phraseItems = new ArrayList<>();
 
     public SymbolPanel(Context context, OnSymbolPicked callback) {
@@ -59,73 +63,48 @@ public class SymbolPanel {
         this.callback = callback;
     }
 
-    public void show() {
+    public boolean isShowing() {
+        return showing;
+    }
+
+    public void show(ViewGroup parent) {
         if (showing) {
             return;
         }
-        windowManager = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
-        root = LayoutInflater.from(context).inflate(R.layout.view_symbol_panel, null);
-        pageTitle = root.findViewById(R.id.symbol_page_label);
-        grid = root.findViewById(R.id.symbol_grid);
-        grid.setNumColumns(4);
+        this.parent = parent;
+        if (!attached) {
+            root = LayoutInflater.from(context).inflate(R.layout.view_symbol_panel, parent, false);
+            pageTitle = root.findViewById(R.id.symbol_page_label);
+            grid = root.findViewById(R.id.symbol_grid);
+            grid.setNumColumns(4);
+            parent.addView(root, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+            attached = true;
+        }
+        root.setVisibility(View.VISIBLE);
+        root.bringToFront();
         reloadPhrases();
         renderTab();
-        root.setFocusable(true);
-        root.setOnKeyListener(new View.OnKeyListener() {
-            @Override
-            public boolean onKey(View v, int keyCode, KeyEvent event) {
-                if (event.getAction() != KeyEvent.ACTION_DOWN) {
-                    return false;
-                }
-                return SymbolPanel.this.onKey(keyCode);
-            }
-        });
-
-        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
-                PixelFormat.TRANSLUCENT);
-        lp.gravity = Gravity.CENTER;
-        lp.token = null;
-        try {
-            windowManager.addView(root, lp);
-            root.requestFocus();
-            showing = true;
-        } catch (RuntimeException ignored) {
-        }
+        parent.requestLayout();
+        showing = true;
     }
 
     public void dismiss() {
-        if (!showing || windowManager == null) {
+        if (!showing) {
             return;
         }
-        try {
-            windowManager.removeView(root);
-        } catch (RuntimeException ignored) {
-        }
         showing = false;
-    }
-
-    private void reloadPhrases() {
-        phraseItems.clear();
-        for (PhraseStore.Entry e : PhraseStore.get(context).entries()) {
-            if (!e.text.isEmpty()) {
-                phraseItems.add(e.text);
-            }
+        if (root != null) {
+            root.setVisibility(View.GONE);
+        }
+        if (parent != null) {
+            parent.requestLayout();
         }
     }
 
-    private String[] currentItems() {
-        if (tab == TAB_PHRASE) {
-            return phraseItems.toArray(new String[0]);
-        }
-        return SYMBOL_PAGES[page];
-    }
-
-    private boolean onKey(int keyCode) {
+    /** @return true if the key was consumed (the service treats the panel as modal). */
+    public boolean handleKey(int keyCode) {
         switch (keyCode) {
             case KeyEvent.KEYCODE_DPAD_LEFT:
                 moveFocus(-1);
@@ -144,7 +123,8 @@ public class SymbolPanel {
                 moveFocus(4);
                 return true;
             case KeyEvent.KEYCODE_DPAD_CENTER:
-            case KeyEvent.KEYCODE_ENTER: {
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_SPACE: {
                 String[] items = currentItems();
                 if (focus >= 0 && focus < items.length && callback != null) {
                     callback.onSymbolPicked(items[focus]);
@@ -156,8 +136,24 @@ public class SymbolPanel {
                 dismiss();
                 return true;
             default:
-                return false;
+                return true; // modal: swallow other keys while open
         }
+    }
+
+    private void reloadPhrases() {
+        phraseItems.clear();
+        for (PhraseStore.Entry e : PhraseStore.get(context).entries()) {
+            if (!e.text.isEmpty()) {
+                phraseItems.add(e.text);
+            }
+        }
+    }
+
+    private String[] currentItems() {
+        if (tab == TAB_PHRASE) {
+            return phraseItems.toArray(new String[0]);
+        }
+        return SYMBOL_PAGES[page];
     }
 
     private void cycleTab() {
@@ -186,8 +182,7 @@ public class SymbolPanel {
             return;
         }
         focus = next;
-        grid.setSelection(focus);
-        ((BaseAdapter) grid.getAdapter()).notifyDataSetChanged();
+        renderTab();
     }
 
     private void renderTab() {
@@ -195,6 +190,7 @@ public class SymbolPanel {
                 ? context.getString(R.string.symbol_tab_symbol)
                 : context.getString(R.string.symbol_tab_phrase));
         final String[] items = currentItems();
+        final int focusRef = focus;
         grid.setAdapter(new BaseAdapter() {
             @Override
             public int getCount() {
@@ -212,20 +208,21 @@ public class SymbolPanel {
             }
 
             @Override
-            public View getView(int position, View convertView, ViewGroup parent) {
+            public View getView(int position, View convertView, ViewGroup parentView) {
                 TextView tv;
                 if (convertView instanceof TextView) {
                     tv = (TextView) convertView;
                 } else {
                     tv = new TextView(context);
                     tv.setGravity(Gravity.CENTER);
-                    tv.setPadding(24, 28, 24, 28);
+                    tv.setPadding(18, 18, 18, 18);
                     tv.setLayoutParams(new GridView.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.WRAP_CONTENT));
                 }
                 tv.setText(items[position]);
-                if (position == focus) {
+                tv.setTextSize(14);
+                if (position == focusRef) {
                     tv.setBackgroundColor(Color.rgb(0x33, 0x66, 0x99));
                     tv.setTextColor(Color.WHITE);
                 } else {
@@ -235,6 +232,5 @@ public class SymbolPanel {
                 return tv;
             }
         });
-        grid.setSelection(focus);
     }
 }

@@ -157,6 +157,13 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        // Symbol/phrase panel is modal: while open, route every key to it.
+        if (symbolPanel != null && symbolPanel.isShowing()) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                symbolPanel.handleKey(keyCode);
+            }
+            return true;
+        }
         // Two-stage BACK (doc §1 / iWnn quick-select): while composing, first
         // BACK cancels composing and returns to the mode bar; a second BACK
         // (when already on the mode bar) falls through to dismiss the IME.
@@ -535,6 +542,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     }
 
     private void showSymbolPanel() {
+        if (rootContainer == null) {
+            return;
+        }
         if (symbolPanel == null) {
             symbolPanel = new SymbolPanel(this, new SymbolPanel.OnSymbolPicked() {
                 @Override
@@ -543,7 +553,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 }
             });
         }
-        symbolPanel.show();
+        symbolPanel.show(rootContainer);
     }
 
     private void commitChar(char c) {
