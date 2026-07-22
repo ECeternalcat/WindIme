@@ -30,6 +30,11 @@ public final class ChineseMultiTapEngine implements ImeEngine, MultiTapSupport {
     private final StringBuilder pinyin = new StringBuilder();
     private List<String> candidates = Collections.emptyList();
     private CharSequence composing = "";
+    private com.garaho.ime.user.UserWordSource userWords;
+
+    public void setUserWordSource(com.garaho.ime.user.UserWordSource src) {
+        this.userWords = src;
+    }
 
     private final Runnable timeoutRunnable = new Runnable() {
         @Override
@@ -93,7 +98,8 @@ public final class ChineseMultiTapEngine implements ImeEngine, MultiTapSupport {
         composing = pending.isEmpty()
                 ? base
                 : MultiTapHighlight.apply(base, highlightStart, highlightEnd);
-        candidates = lookup(pinyin.toString());
+        String phraseKey = T9Segmenter.joinKey(T9Segmenter.segmentLetters(pinyin.toString()));
+        candidates = com.garaho.ime.user.UserWordSource.merge(phraseKey, lookup(pinyin.toString()), userWords);
         fire();
     }
 

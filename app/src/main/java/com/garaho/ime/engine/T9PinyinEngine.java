@@ -30,6 +30,11 @@ public final class T9PinyinEngine implements ImeEngine {
     private EngineListener listener;
     private List<String> candidates = Collections.emptyList();
     private String composing = "";
+    private com.garaho.ime.user.UserWordSource userWords;
+
+    public void setUserWordSource(com.garaho.ime.user.UserWordSource src) {
+        this.userWords = src;
+    }
 
     @Override
     public void setListener(EngineListener listener) {
@@ -102,8 +107,10 @@ public final class T9PinyinEngine implements ImeEngine {
 
     private void recompute() {
         List<List<String>> segmentations = T9Segmenter.segment(buffer.toString());
-        candidates = buildCandidates(segmentations);
-        composing = T9Segmenter.bestPhraseKey(segmentations);
+        List<String> base = buildCandidates(segmentations);
+        String phrase = T9Segmenter.bestPhraseKey(segmentations);
+        candidates = com.garaho.ime.user.UserWordSource.merge(phrase, base, userWords);
+        composing = phrase;
         fire(null);
     }
 

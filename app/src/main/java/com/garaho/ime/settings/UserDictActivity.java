@@ -1,21 +1,112 @@
 package com.garaho.ime.settings;
 
 import com.garaho.ime.R;
+import com.garaho.ime.user.UserDictionary;
 
-import android.app.Activity;
-import android.os.Bundle;
-import android.widget.TextView;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
+import android.text.InputType;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.widget.AdapterView;
+import android.widget.EditText;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * User-dictionary manager (design doc §2.3). Scaffold for adding/editing user
- * words; full CRUD lands in a later phase.
+ * User-dictionary manager (design doc §2.3). D-Pad list of pinyin &rarr; word
+ * entries with add / edit / delete via AlertDialogs (which are themselves
+ * focus-navigable). Added words are surfaced by the pinyin engines via
+ * {@link UserDictionary} (implemented as {@link com.garaho.ime.user.UserWordSource}).
  */
-public class UserDictActivity extends Activity {
+public class UserDictActivity extends BaseMenuActivity {
+
+    private UserDictionary dict;
+    private List<UserDictionary.Entry> snapshot = new ArrayList<>();
+
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(android.os.Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_placeholder);
-        ((TextView) findViewById(R.id.menu_title)).setText(R.string.settings_user_dict);
-        ((TextView) findViewById(R.id.placeholder_text)).setText(R.string.user_dict_placeholder);
+        dict = UserDictionary.get(this);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        rebuild();
+    }
+
+    private void rebuild() {
+        snapshot = dict.entries();
+        String[] items = new String[snapshot.size() + 1];
+        items[0] = "＋ " + getString(R.string.user_dict_add);
+        for (int i = 0; i < snapshot.size(); i++) {
+            UserDictionary.Entry e = snapshot.get(i);
+            items[i + 1] = e.word + "  [" + e.pinyin + "]";
+        }
+        setMenuItems(items, new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                if (position == 0) {
+                    showEntryDialog(null, null, false);
+                } else {
+                    UserDictionary.Entry e = snapshot.get(position - 1);
+                    showEntryDialog(e.pinyin, e.word, true);
+                }
+            }
+        });
+    }
+
+    private void showEntryDialog(final String oldPinyin, final String oldWord, final boolean editing) {
+        View body = LayoutInflater.from(this).inflate(R.layout.dialog_two_fields, null);
+        final EditText pinyinField = body.findViewById(R.id.field1);
+        final EditText wordField = body.findViewById(R.id.field2);
+        pinyinField.setHint(R.string.user_dict_pinyin_hint);
+        pinyinField.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_NORMAL);
+        wordField.setHint(R.string.user_dict_word_hint);
+        if (editing) {
+            pinyinField.setText(oldPinyin);
+            wordField.setText(oldWord);
+        }
+
+        AlertDialog.Builder b = new AlertDialog.Builder(this)
+                .setTitle(editing ? R.string.user_dict_edit : R.string.user_dict_add)
+                .setView(body)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        String p = pinyinField.getText().toString().trim();
+                        String w = wordField.getText().toString().trim();
+                        if (p.isEmpty() || w.isEmpty()) {
+                            return;
+                        }
+                        if (editing) {
+                            dict.remove(oldPinyin, oldWord);
+                        }
+                        dict.add(p, w);
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null);
+        if (editing) {
+            b.setNeutralButton(R.string.user_dict_delete, new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialog, int which) {
+                    dict.remove(oldPinyin, oldWord);
+                }
+            });
+        }
+        b.show();
+        pinyinField.requestFocus();
+    }
+
+    @Override
+    protected int getTitleRes() {
+        return R.string.settings_user_dict;
+    }
+
+    @Override
+    protected int getHintRes() {
+        return R.string.menu_hint_nav;
     }
 }

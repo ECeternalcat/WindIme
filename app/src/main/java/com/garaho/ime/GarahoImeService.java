@@ -88,6 +88,14 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         zhMultiTapEngine.setListener(this);
         enMultiTapEngine = new EnglishMultiTapEngine(prefs);
         enMultiTapEngine.setListener(this);
+
+        com.garaho.ime.user.UserDictionary userDict = com.garaho.ime.user.UserDictionary.get(this);
+        if (pinyinEngine instanceof com.garaho.ime.engine.T9PinyinEngine) {
+            ((com.garaho.ime.engine.T9PinyinEngine) pinyinEngine).setUserWordSource(userDict);
+        } else if (pinyinEngine instanceof com.garaho.ime.engine.RimeEngine) {
+            ((com.garaho.ime.engine.RimeEngine) pinyinEngine).setUserWordSource(userDict);
+        }
+        zhMultiTapEngine.setUserWordSource(userDict);
     }
 
     @Override

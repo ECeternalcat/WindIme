@@ -35,6 +35,12 @@ public final class RimeEngine implements ImeEngine {
     private EngineListener listener;
     private List<String> candidates = Collections.emptyList();
     private String composing = "";
+    private String currentPhraseKey = "";
+    private com.garaho.ime.user.UserWordSource userWords;
+
+    public void setUserWordSource(com.garaho.ime.user.UserWordSource src) {
+        this.userWords = src;
+    }
 
     /**
      * @return {@code true} if the librime shared library has been successfully
@@ -206,6 +212,7 @@ public final class RimeEngine implements ImeEngine {
             remainder = seg.remainder;
         }
         String letters = T9Segmenter.phraseKeyToLetters(phraseKey);
+        currentPhraseKey = phraseKey;
         composing = phraseKey.isEmpty()
                 ? buf
                 : (remainder.isEmpty() ? phraseKey : phraseKey + " " + remainder);
@@ -256,7 +263,7 @@ public final class RimeEngine implements ImeEngine {
         Log.d(TAG, "getRimeCandidates -> count=" + (arr == null ? -1 : arr.length)
                 + " usable=" + list.size()
                 + (list.isEmpty() ? "" : " first=" + list.get(0)));
-        candidates = list;
+        candidates = com.garaho.ime.user.UserWordSource.merge(currentPhraseKey, list, userWords);
         CommitProto pending = safeCommit();
         if (listener != null) {
             if (pending != null && pending.text != null && !pending.text.isEmpty()) {

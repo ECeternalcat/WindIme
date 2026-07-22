@@ -65,4 +65,17 @@
 
     <string name="user_dict_placeholder">用户词典管理（即将推出）</string>
     <string name="phrase_placeholder">定型文 / 常用短语管理（即将推出）</string>
+
+    <string name="user_dict_add">添加自造词</string>
+    <string name="user_dict_edit">编辑自造词</string>
+    <string name="user_dict_delete">删除</string>
+    <string name="user_dict_pinyin_hint">拼音（小写字母，如 nihao）</string>
+    <string name="user_dict_word_hint">对应汉字 / 词</string>
+
+    <string name="phrase_add">添加短语</string>
+    <string name="phrase_edit">编辑短语</string>
+    <string name="phrase_copy">复制文本</string>
+    <string name="phrase_label_hint">名称（如 我的邮箱）</string>
+    <string name="phrase_text_hint">内容</string>
+    <string name="phrase_copied">已复制到剪贴板</string>
 </resources>
