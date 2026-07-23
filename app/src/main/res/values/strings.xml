@@ -10,18 +10,22 @@
     <string name="symbol_page_format">符号选择 [%1$d/%2$d 页]</string>
     <string name="symbol_tab_symbol">▶ 符号 | 定型文   (↑切换页签)</string>
     <string name="symbol_tab_phrase">符号 | ▶ 定型文   (↑切换页签)</string>
+    <string name="quick_menu_title">WindIme 快捷菜单</string>
+    <string name="quick_menu_keymap">映射配置</string>
+    <string name="quick_menu_pick_ime">切换系统输入法</string>
+    <string name="quick_menu_mode_loop">模式循环</string>
+    <string name="quick_menu_settings">WindIme 设置</string>
+    <string name="quick_menu_keymap_title">选择映射配置</string>
     <string name="wizard_press_action_prompt">请按下【%1$s】键</string>
     <string name="wizard_step_format">步骤 %1$d / %2$d</string>
-    <string name="wizard_done_ok">校准完成，已保存为 user_keymap.json</string>
+    <string name="wizard_done_ok">按键校准完成</string>
     <string name="wizard_done_fail">保存失败，请重试</string>
-    <string name="wizard_skip_tip">没有此键？按 返回 跳过本步</string>
-    <string name="wizard_reserved_key">该键已保留给输入/导航，请按其它键</string>
-    <string name="wizard_already_bound">该键已绑给其它功能，请按其它键</string>
 
     <string name="action_lang_mode">中英切换</string>
     <string name="action_symbol_panel">符号表</string>
+    <string name="action_quick_menu">快捷菜单</string>
     <string name="action_backspace">退格删除</string>
-    <string name="action_confirm">确认</string>
+    <string name="action_confirm">确认 / 换行</string>
     <string name="action_nav_up">向上</string>
     <string name="action_nav_down">向下</string>
     <string name="action_nav_left">向左</string>
@@ -40,6 +44,28 @@
     <string name="settings_phrase">定型文 / 常用短语</string>
     <string name="settings_reset">重置设置</string>
     <string name="settings_rime">Rime 词库与部署</string>
+    <string name="settings_about">关于 WindIme</string>
+
+    <string name="about_title">关于 WindIme</string>
+    <string name="about_free_notice">本项目使用GPL V3许可证开源，完全免费！禁止倒卖！</string>
+    <string name="about_description">面向 Android 翻盖机、老人机和低配设备的实体键盘 T9 输入法。无需触摸屏，全部交互均可通过方向键和数字键完成。</string>
+    <string name="about_version_format">版本：%1$s（%2$d）</string>
+    <string name="about_copyright">Copyright © 2026 Eternalcat</string>
+    <string name="about_source_code">项目源代码</string>
+    <string name="about_source_url">https://github.com/ECeternalcat/WindIme</string>
+    <string name="about_open_source_licenses">开源许可证</string>
+    <string name="about_hint">▲/▼ 移动焦点，OK 打开，BACK 返回</string>
+    <string name="license_windime">WindIme - GNU GPL v3</string>
+    <string name="license_rime">Rime / librime - BSD 3-Clause</string>
+    <string name="license_trime">Trime - GNU GPL v3</string>
+    <string name="license_rime_ice">rime-ice - GNU GPL v3</string>
+    <string name="license_androidx">AndroidX AppCompat - Apache 2.0</string>
+    <string name="license_load_failed">无法读取许可证正文。</string>
+    <string name="license_gpl_attribution">GNU General Public License Version 3\n\n该组件依据 GNU GPL v3 发布。完整许可证正文如下：</string>
+    <string name="license_androidx_attribution">AndroidX AppCompat\nCopyright © The Android Open Source Project\n\n依据 Apache License 2.0 发布。完整许可证正文如下：</string>
+    <string name="license_rime_attribution">Rime / librime\nCopyright © 2014 RIME Developers\n\n依据 BSD 3-Clause License 发布。完整许可证正文如下：</string>
+    <string name="easter_egg_title">哇哦，你居然找到这里来了？！</string>
+    <string name="easter_egg_subtitle">既然来了，那请看开发者早期珍贵影像吧。</string>
 
     <string name="input_mode_loop">模式循环</string>
     <string name="input_default_ime">设置默认输入法</string>
@@ -69,14 +95,59 @@
     <string name="value_off">关</string>
 
     <string name="keymap_wizard">按键校准向导</string>
+    <string name="keymap_profiles_entry">映射配置</string>
+    <string name="keymap_profiles_title">映射配置</string>
+    <string name="keymap_choose_target">选择保存位置</string>
+    <string name="keymap_factory_slot">系统默认</string>
+    <string name="keymap_user_slot_default">用户配置 %1$d</string>
+    <string name="keymap_slot_empty">%1$s（未创建）</string>
+    <string name="keymap_slot_active">● %1$s（使用中）</string>
+    <string name="keymap_slot_inactive">○ %1$s</string>
+    <string name="keymap_slot_activate">切换到此配置</string>
+    <string name="keymap_slot_view">查看当前映射</string>
+    <string name="keymap_slot_calibrate">校准 / 覆盖配置</string>
+    <string name="keymap_slot_rename">修改配置名称</string>
+    <string name="keymap_slot_delete">删除配置</string>
+    <string name="keymap_slot_overwrite_confirm">重新校准“%1$s”？跳过的项目会保留原映射。</string>
+    <string name="keymap_slot_delete_confirm">删除“%1$s”？如果正在使用，将自动切换到系统默认。</string>
+    <string name="keymap_factory_read_only">系统默认配置为只读，请选择用户配置 1-4 保存校准结果。</string>
+    <string name="keymap_detail_source">来源</string>
+    <string name="keymap_unbound">未绑定</string>
+    <string name="keymap_name_hint">配置名称</string>
+    <string name="keymap_name_required">请输入配置名称</string>
     <string name="keymap_indicator">显示状态指示器</string>
     <string name="keymap_current_preset">当前预设</string>
+    <string name="keymap_source">映射来源</string>
+    <string name="keymap_source_user">用户校准</string>
+    <string name="keymap_source_factory">内置预设</string>
+    <string name="keymap_restore_default">恢复默认按键映射</string>
+    <string name="keymap_keycode_unknown">仅扫描码</string>
+    <string name="keymap_mapping_format">%1$s：%2$s（kc=%3$d，sc=%4$d）</string>
+    <string name="keymap_mapping_unbound">%1$s：未绑定</string>
     <string name="wizard_back_as_delete_tip">可直接按机身返回键：绑定后先作为退格，内容为空时关闭输入法，再按一次恢复系统返回。</string>
+    <string name="wizard_key_reserved">该键承担标准输入或导航功能，请按其他键。</string>
+    <string name="wizard_key_duplicate">该键已绑定到前面的功能，请按其他键。</string>
+    <string name="wizard_controls">OK/ENTER 或 → 跳过，← 返回上一步，BACK 取消。方向键和确认键不会被绑定。</string>
+    <string name="wizard_skipped">保留现有映射</string>
+    <string name="wizard_done_summary">校准完成。新映射将在下一次打开输入框时生效。</string>
+    <string name="wizard_done_controls">按 BACK 返回按键设置。</string>
+    <string name="wizard_target_format">%1$s\n%2$s</string>
+    <string name="wizard_name_config">配置名称</string>
+    <string name="wizard_save_and_use">保存并使用</string>
+    <string name="wizard_saved_profile">已保存并切换到“%1$s”。新映射将在下一次打开输入框时生效。</string>
+    <string name="wizard_factory_escape_hint">长按【退格】+【#】5 秒可切换回系统默认映射，不会删除用户配置。</string>
 
-    <string name="reset_keymap">恢复默认按键映射</string>
+    <string name="reset_keymap">切换到系统默认映射</string>
     <string name="reset_user_data">清除 Rime 用户学习</string>
-    <string name="reset_keymap_confirm">恢复出厂按键映射？</string>
-    <string name="reset_user_data_confirm">下次全新应用进程启动时清除 Rime 用户学习数据。此操作不可恢复，继续？</string>
+    <string name="reset_user_dict">清空用户词典</string>
+    <string name="reset_phrases">清空定型文</string>
+    <string name="reset_all">清除全部设置</string>
+    <string name="reset_keymap_confirm">切换到只读的系统默认映射？已保存的用户配置不会被删除。</string>
+    <string name="reset_user_data_confirm">清空 RIME 用户数据与学习记录？</string>
+    <string name="reset_user_dict_confirm">清空全部用户自造词？此操作不可恢复。</string>
+    <string name="reset_phrases_confirm">清空全部定型文 / 常用短语？此操作不可恢复。</string>
+    <string name="reset_all_confirm">清除全部设置（按键映射、模式循环、反馈等）、用户词典、定型文，并排队清除 Rime 用户学习？已保存的按键配置文件不会被删除。</string>
+    <string name="reset_all_done">已清除全部设置</string>
 
     <string name="user_dict_placeholder">用户词典管理（即将推出）</string>
     <string name="phrase_placeholder">定型文 / 常用短语管理（即将推出）</string>
@@ -86,13 +157,29 @@
     <string name="user_dict_delete">删除</string>
     <string name="user_dict_pinyin_hint">拼音（小写字母，如 nihao）</string>
     <string name="user_dict_word_hint">对应汉字 / 词</string>
+    <string name="user_dict_export">导出自造词</string>
+    <string name="user_dict_import">导入自造词</string>
 
     <string name="phrase_add">添加短语</string>
     <string name="phrase_edit">编辑短语</string>
+    <string name="phrase_save">保存</string>
     <string name="phrase_copy">复制文本</string>
     <string name="phrase_label_hint">名称（如 我的邮箱）</string>
     <string name="phrase_text_hint">内容</string>
     <string name="phrase_copied">已复制到剪贴板</string>
+    <string name="phrase_export">导出定型文</string>
+    <string name="phrase_import">导入定型文</string>
+
+    <string name="store_export_success">已导出到：%1$s</string>
+    <string name="store_export_failed">导出失败</string>
+    <string name="store_import_success">已导入 %1$d 项</string>
+    <string name="store_import_none">没有新内容可导入</string>
+    <string name="store_import_failed">导入失败：文件不存在或格式错误</string>
+    <string name="store_validation_empty">拼音与对应内容均不能为空</string>
+    <string name="store_validation_too_long">内容过长</string>
+    <string name="store_validation_too_many">条目数已达上限</string>
+    <string name="store_validation_duplicate">已存在相同内容</string>
+    <string name="store_validation_io">保存失败，请重试</string>
 
     <string name="rime_status_lightweight_short">轻量词库</string>
     <string name="rime_status_preparing_short">轻量·准备雾凇</string>
@@ -110,8 +197,8 @@
     <string name="rime_redeploy">重新部署雾凇词库</string>
     <string name="rime_clear_build">清理编译缓存</string>
     <string name="rime_clear_learning">清除 Rime 用户学习</string>
-    <string name="rime_redeploy_confirm">下次全新应用进程启动时清理共享数据和编译缓存，并重新部署。继续？</string>
-    <string name="rime_clear_build_confirm">下次全新应用进程启动时清理 Rime 编译缓存，不删除用户学习。继续？</string>
-    <string name="rime_clear_learning_confirm">下次全新应用进程启动时删除 Rime 用户学习数据。此操作不可恢复，继续？</string>
-    <string name="rime_queued">已排队；下次全新应用进程启动时安全执行</string>
+    <string name="rime_redeploy_confirm">下次输入法服务启动时清理共享数据和编译缓存，并重新部署。继续？</string>
+    <string name="rime_clear_build_confirm">下次输入法服务启动时清理 Rime 编译缓存，不删除用户学习。继续？</string>
+    <string name="rime_clear_learning_confirm">下次输入法服务启动时删除 Rime 用户学习数据。此操作不可恢复，继续？</string>
+    <string name="rime_queued">已排队；应用进程重启或设备重启后安全执行</string>
 </resources>

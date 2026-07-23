@@ -32,6 +32,7 @@ public class CandidateBar extends LinearLayout {
 
     private TextView composingPreview;
     private TextView backendStatus;
+    private TextView positionIndicator;
     private ViewGroup pinyinRow;
     private ViewGroup candidateRow;
     private ViewGroup modeBar;
@@ -59,6 +60,7 @@ public class CandidateBar extends LinearLayout {
         LayoutInflater.from(getContext()).inflate(R.layout.view_candidate_bar_children, this, true);
         composingPreview = findViewById(R.id.composing_preview);
         backendStatus = findViewById(R.id.backend_status);
+        positionIndicator = findViewById(R.id.position_indicator);
         pinyinRow = findViewById(R.id.pinyin_row);
         candidateRow = findViewById(R.id.candidate_row);
         modeBar = findViewById(R.id.mode_bar);
@@ -132,9 +134,10 @@ public class CandidateBar extends LinearLayout {
 
     public void setCandidates(String[] candidates) {
         this.candidates = candidates == null ? new String[0] : Arrays.copyOf(candidates, candidates.length);
-        if (candidateFocusIndex >= this.candidates.length) {
-            candidateFocusIndex = Math.max(0, this.candidates.length - 1);
-        }
+        // Refresh correction (improvement doc §3): a fresh candidate list
+        // always starts at the top, so a stale focus index can never commit a
+        // word that is no longer the one the user sees highlighted.
+        candidateFocusIndex = 0;
         render();
     }
 
@@ -277,11 +280,39 @@ public class CandidateBar extends LinearLayout {
                 tv.setBackgroundColor(Color.TRANSPARENT);
                 tv.setTextColor(Color.BLACK);
             }
+            // Width proportional to the item's text length so longer candidates
+            // get more space and are not clipped (fae0ae3), with ellipsis only
+            // as a last-resort safety net.
             LayoutParams lp = new LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, Math.max(1f, (float) label.length()));
             candidateRow.addView(tv, lp);
         }
+        updatePositionIndicator();
         invalidate();
+    }
+
+    /**
+     * Show a compact "{@code n/total}" position label for the active layer when
+     * its list spans more than one window (improvement doc §3). Hidden when
+     * everything fits or while the mode bar is up (lists are empty then).
+     */
+    private void updatePositionIndicator() {
+        String label = "";
+        int window = gridExpanded ? INLINE_VISIBLE * INLINE_VISIBLE : INLINE_VISIBLE;
+        if (activeLayer == InputLayer.PINYIN && pinyinOptions.length > PINYIN_VISIBLE) {
+            label = CandidatePagination.positionLabel(
+                    pinyinFocusIndex, pinyinOptions.length, PINYIN_VISIBLE);
+        } else if (activeLayer == InputLayer.CANDIDATE && candidates.length > window) {
+            label = CandidatePagination.positionLabel(
+                    candidateFocusIndex, candidates.length, window);
+        }
+        if (label.isEmpty()) {
+            positionIndicator.setText("");
+            positionIndicator.setVisibility(View.GONE);
+        } else {
+            positionIndicator.setText(label);
+            positionIndicator.setVisibility(View.VISIBLE);
+        }
     }
 
     private void renderPinyinOptions() {
@@ -315,9 +346,6 @@ public class CandidateBar extends LinearLayout {
     }
 
     private static int visibleStart(int focus, int count, int window) {
-        if (count <= window || focus < window) {
-            return 0;
-        }
-        return Math.min(focus - window + 1, count - window);
+        return CandidatePagination.visibleStart(focus, count, window);
     }
 }

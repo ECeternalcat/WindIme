@@ -3,7 +3,6 @@ package com.garaho.ime.ui;
 import android.content.Context;
 import android.graphics.Color;
 import android.view.Gravity;
-import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -14,6 +13,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import com.garaho.ime.R;
+import com.garaho.ime.keymap.InputAction;
 import com.garaho.ime.user.PhraseStore;
 
 import java.util.ArrayList;
@@ -25,7 +25,7 @@ import java.util.List;
  * <p>Implemented as a child overlay of the IME input view (a separate
  * WindowManager window does not reliably receive key events inside an IME).
  * The host {@code GarahoImeService} routes D-Pad / OK / BACK to
- * {@link #handleKey(int)} while {@link #isShowing()} is true, making the panel
+ * {@link #handleAction(InputAction)} while {@link #isShowing()} is true, making the panel
  * effectively modal. 符号 and 定型文 share the panel; UP past the first row
  * cycles the tab.
  */
@@ -103,28 +103,26 @@ public class SymbolPanel {
         }
     }
 
-    /** @return true if the key was consumed (the service treats the panel as modal). */
-    public boolean handleKey(int keyCode) {
-        switch (keyCode) {
-            case KeyEvent.KEYCODE_DPAD_LEFT:
+    /** @return true if the action was consumed (the service treats the panel as modal). */
+    public boolean handleAction(InputAction action) {
+        switch (action) {
+            case NAV_LEFT:
                 moveFocus(-1);
                 return true;
-            case KeyEvent.KEYCODE_DPAD_RIGHT:
+            case NAV_RIGHT:
                 moveFocus(1);
                 return true;
-            case KeyEvent.KEYCODE_DPAD_UP:
+            case NAV_UP:
                 if (focus < 4) {
                     cycleTab();
                 } else {
                     moveFocus(-4);
                 }
                 return true;
-            case KeyEvent.KEYCODE_DPAD_DOWN:
+            case NAV_DOWN:
                 moveFocus(4);
                 return true;
-            case KeyEvent.KEYCODE_DPAD_CENTER:
-            case KeyEvent.KEYCODE_ENTER:
-            case KeyEvent.KEYCODE_SPACE: {
+            case CONFIRM_SELECTION: {
                 String[] items = currentItems();
                 if (focus >= 0 && focus < items.length && callback != null) {
                     callback.onSymbolPicked(items[focus]);
@@ -132,9 +130,6 @@ public class SymbolPanel {
                 dismiss();
                 return true;
             }
-            case KeyEvent.KEYCODE_BACK:
-                dismiss();
-                return true;
             default:
                 return true; // modal: swallow other keys while open
         }
@@ -182,14 +177,7 @@ public class SymbolPanel {
             return;
         }
         focus = next;
-        // Scroll the grid so the newly focused item is actually visible, then
-        // refresh the highlight without rebuilding the adapter (which would
-        // reset scroll back to the top).
-        grid.setSelection(focus);
-        BaseAdapter a = (BaseAdapter) grid.getAdapter();
-        if (a != null) {
-            a.notifyDataSetChanged();
-        }
+        renderTab();
     }
 
     private void renderTab() {
@@ -197,6 +185,7 @@ public class SymbolPanel {
                 ? context.getString(R.string.symbol_tab_symbol)
                 : context.getString(R.string.symbol_tab_phrase));
         final String[] items = currentItems();
+        final int focusRef = focus;
         grid.setAdapter(new BaseAdapter() {
             @Override
             public int getCount() {
@@ -228,7 +217,7 @@ public class SymbolPanel {
                 }
                 tv.setText(items[position]);
                 tv.setTextSize(14);
-                if (position == focus) {
+                if (position == focusRef) {
                     tv.setBackgroundColor(Color.rgb(0x33, 0x66, 0x99));
                     tv.setTextColor(Color.WHITE);
                 } else {
@@ -238,6 +227,5 @@ public class SymbolPanel {
                 return tv;
             }
         });
-        grid.setSelection(focus);
     }
 }

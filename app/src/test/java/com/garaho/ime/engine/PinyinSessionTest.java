@@ -43,6 +43,25 @@ public class PinyinSessionTest {
     }
 
     @Test
+    public void previewedCompleteSyllableLocksOnNextDigit() {
+        // Moving the cursor onto a complete reading (e.g. 24 -> ai) and then
+        // continuing to type must lock that reading, so multi-syllable input
+        // works without an explicit OK (mirrors confirm() above).
+        PinyinSession session = type("24");
+        int ai = session.getOptions().indexOf("ai");
+
+        assertTrue(session.preview(ai));
+        assertEquals("ai", session.getPhraseKey());
+        assertEquals("24", session.getDigits());
+
+        assertTrue(session.processDigit(6));
+
+        assertEquals(Arrays.asList("ai"), session.getLockedSyllables());
+        assertEquals("ai'o", session.getPhraseKey());
+        assertEquals("246", session.getDigits());
+    }
+
+    @Test
     public void partialLetterCannotBeConfirmedAsSyllable() {
         PinyinSession session = type("24");
 

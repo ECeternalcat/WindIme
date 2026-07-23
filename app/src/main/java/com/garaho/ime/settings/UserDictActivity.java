@@ -1,6 +1,7 @@
 package com.garaho.ime.settings;
 
 import com.garaho.ime.R;
+import com.garaho.ime.user.StoreResult;
 import com.garaho.ime.user.UserDictionary;
 
 import android.app.AlertDialog;
@@ -10,15 +11,18 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.EditText;
+import android.widget.Toast;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * User-dictionary manager (design doc §2.3). D-Pad list of pinyin &rarr; word
  * entries with add / edit / delete via AlertDialogs (which are themselves
- * focus-navigable). Added words are surfaced by the pinyin engines via
- * {@link UserDictionary} (implemented as {@link com.garaho.ime.user.UserWordSource}).
+ * focus-navigable), plus import/export of the JSON store to app-specific
+ * external storage (improvement doc §5). Added words are surfaced by the
+ * pinyin engines via {@link UserDictionary} (a {@link com.garaho.ime.user.UserWordSource}).
  */
 public class UserDictActivity extends BaseMenuActivity {
 
@@ -37,25 +41,63 @@ public class UserDictActivity extends BaseMenuActivity {
         rebuild();
     }
 
+    private File exportFile() {
+        File dir = getExternalFilesDir(null);
+        if (dir == null) {
+            dir = new File(getFilesDir(), "export");
+        }
+        return new File(dir, UserDictionary.EXPORT_FILE_NAME);
+    }
+
     private void rebuild() {
         snapshot = dict.entries();
-        String[] items = new String[snapshot.size() + 1];
+        int size = snapshot.size();
+        String[] items = new String[size + 3];
         items[0] = "＋ " + getString(R.string.user_dict_add);
-        for (int i = 0; i < snapshot.size(); i++) {
+        for (int i = 0; i < size; i++) {
             UserDictionary.Entry e = snapshot.get(i);
             items[i + 1] = e.word + "  [" + e.pinyin + "]";
         }
+        items[size + 1] = "⬆ " + getString(R.string.user_dict_export);
+        items[size + 2] = "⬇ " + getString(R.string.user_dict_import);
         setMenuItems(items, new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                 if (position == 0) {
                     showEntryDialog(null, null, false);
+                } else if (position == snapshot.size() + 1) {
+                    doExport();
+                } else if (position == snapshot.size() + 2) {
+                    doImport();
                 } else {
                     UserDictionary.Entry e = snapshot.get(position - 1);
                     showEntryDialog(e.pinyin, e.word, true);
                 }
             }
         });
+    }
+
+    private void doExport() {
+        File dest = exportFile();
+        if (dict.exportTo(dest)) {
+            Toast.makeText(this, getString(R.string.store_export_success, dest.getAbsolutePath()),
+                    Toast.LENGTH_LONG).show();
+        } else {
+            Toast.makeText(this, R.string.store_export_failed, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void doImport() {
+        int added = dict.importFrom(exportFile());
+        if (added < 0) {
+            Toast.makeText(this, R.string.store_import_failed, Toast.LENGTH_LONG).show();
+        } else if (added == 0) {
+            Toast.makeText(this, R.string.store_import_none, Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, getString(R.string.store_import_success, added),
+                    Toast.LENGTH_SHORT).show();
+        }
+        rebuild();
     }
 
     private void showEntryDialog(final String oldPinyin, final String oldWord, final boolean editing) {
@@ -78,13 +120,19 @@ public class UserDictActivity extends BaseMenuActivity {
                     public void onClick(DialogInterface dialog, int which) {
                         String p = pinyinField.getText().toString().trim();
                         String w = wordField.getText().toString().trim();
-                        if (p.isEmpty() || w.isEmpty()) {
-                            return;
-                        }
                         if (editing) {
                             dict.remove(oldPinyin, oldWord);
                         }
-                        dict.add(p, w);
+                        StoreResult r = dict.add(p, w);
+                        if (r != StoreResult.OK) {
+                            // Roll back the removal so a failed edit never loses
+                            // the original entry.
+                            if (editing) {
+                                dict.add(oldPinyin, oldWord);
+                            }
+                            Toast.makeText(UserDictActivity.this, messageFor(r),
+                                    Toast.LENGTH_SHORT).show();
+                        }
                     }
                 })
                 .setNegativeButton(android.R.string.cancel, null);
@@ -98,6 +146,17 @@ public class UserDictActivity extends BaseMenuActivity {
         }
         b.show();
         pinyinField.requestFocus();
+    }
+
+    private int messageFor(StoreResult r) {
+        switch (r) {
+            case EMPTY: return R.string.store_validation_empty;
+            case TOO_LONG: return R.string.store_validation_too_long;
+            case TOO_MANY: return R.string.store_validation_too_many;
+            case DUPLICATE: return R.string.store_validation_duplicate;
+            case IO_ERROR: return R.string.store_validation_io;
+            default: return R.string.store_validation_io;
+        }
     }
 
     @Override

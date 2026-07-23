@@ -36,6 +36,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textSize="12sp"
-        android:text="长按【退格】+【#】5 秒可恢复出厂预设。" />
+        android:text="@string/wizard_factory_escape_hint" />
 
 </LinearLayout>

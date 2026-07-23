@@ -86,6 +86,55 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
     }
 
     /**
+     * Build an engine against an already-running native Rime (same process),
+     * without calling {@link Rime#startupRime} again. Used when the IME service
+     * is recreated mid-process: native state is reusable, re-initializing it
+     * would start a second, conflicting maintenance session.
+     *
+     * @return a ready engine, or {@code null} if native Rime is not running /
+     *         not loadable in this process.
+     */
+    public static RimeEngine tryReattach(String schemaId) {
+        if (!startedInProcess || !Rime.loadLibrary()) {
+            return null;
+        }
+        try {
+            RimeEngine engine = new RimeEngine();
+            try {
+                String current = Rime.getCurrentRimeSchema();
+                if (!schemaId.equals(current)) {
+                    Rime.selectRimeSchema(schemaId);
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "reattach schema select failed: " + t);
+            }
+            Log.i(TAG, "Rime reattached (native already started)");
+            return engine;
+        } catch (Throwable t) {
+            Log.w(TAG, "Rime reattach failed: " + t);
+            return null;
+        }
+    }
+
+    /**
+     * Persist user learning at a safe point (no deployment in flight). Returns
+     * false if native Rime is not running so callers need not probe separately.
+     */
+    public static boolean syncUserData() {
+        if (!startedInProcess || !Rime.loadLibrary()) {
+            return false;
+        }
+        try {
+            boolean ok = Rime.syncRimeUserData();
+            Log.i(TAG, "syncRimeUserData -> " + ok);
+            return ok;
+        } catch (Throwable t) {
+            Log.w(TAG, "syncRimeUserData failed: " + t);
+            return false;
+        }
+    }
+
+    /**
      * Wait for asynchronous schema deployment and select the requested schema.
      * Intended for the background initialization thread, never the IME thread.
      */
@@ -155,6 +204,15 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
         String chosen = candidates.get(index);
         int nativeIndex = nativeCandidates.indexOf(chosen);
         if (nativeIndex < 0) {
+            // User-word fast path: the chosen word came from the user
+            // dictionary, not from Rime. Clear Rime's stale composition
+            // before committing so its internal state stays consistent
+            // (audit M-1).
+            try {
+                Rime.clearRimeComposition();
+            } catch (Throwable ignored) {
+            }
+            Log.d(TAG, "selectCandidate: user-word fast path for '" + chosen + "'");
             clearAfterCommit(chosen);
             return true;
         }

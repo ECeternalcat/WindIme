@@ -14,22 +14,20 @@ public final class PinyinSession {
     private int selectedIndex = -1;
     private boolean confirmed;
     private boolean partialSelectionPinned;
-    private boolean userPreviewed;
+    private boolean completeSelectionPinned;
 
     public boolean processDigit(int digit) {
         if (digit < 2 || digit > 9) {
             return false;
         }
-        // If the user explicitly moved the cursor onto a COMPLETE syllable
-        // option, lock it now so the next digit starts a fresh syllable -
-        // no OK required. (A default/auto selection is NOT locked, so a longer
-        // syllable like "bing" can still grow from continued typing.)
-        String option = selectedOption();
-        boolean shouldLock = confirmed || (userPreviewed && isCompleteOption(option));
-        if (shouldLock) {
+        // A complete syllable the user actively selected (via LEFT/RIGHT) is
+        // locked as soon as they continue typing, so multi-syllable input like
+        // wo|ai|ni works without an explicit OK. Auto-default selections are
+        // not pinned, so multi-digit syllables such as 426->hao still form.
+        if (confirmed || completeSelectionPinned) {
             lockCurrentSelection();
         }
-        String preferredPrefix = (!shouldLock && partialSelectionPinned) ? option : null;
+        String preferredPrefix = partialSelectionPinned ? selectedOption() : null;
         tailDigits.append((char) ('0' + digit));
         recomputeWithPrefix(preferredPrefix);
         return true;
@@ -60,8 +58,9 @@ public final class PinyinSession {
         }
         selectedIndex = index;
         confirmed = false;
-        userPreviewed = true;
-        partialSelectionPinned = !isCompleteOption(selectedOption());
+        boolean complete = isCompleteOption(selectedOption());
+        partialSelectionPinned = !complete;
+        completeSelectionPinned = complete;
         return true;
     }
 
@@ -86,7 +85,7 @@ public final class PinyinSession {
         selectedIndex = -1;
         confirmed = false;
         partialSelectionPinned = false;
-        userPreviewed = false;
+        completeSelectionPinned = false;
     }
 
     public List<String> getOptions() {
@@ -152,7 +151,7 @@ public final class PinyinSession {
         selectedIndex = -1;
         confirmed = false;
         partialSelectionPinned = false;
-        userPreviewed = false;
+        completeSelectionPinned = false;
     }
 
     private void recompute(String preferredOption) {
@@ -160,11 +159,12 @@ public final class PinyinSession {
         selectedIndex = preferredIndex(preferredOption);
         confirmed = false;
         partialSelectionPinned = false;
-        userPreviewed = false;
+        completeSelectionPinned = false;
     }
 
     private void recomputeWithPrefix(String preferredPrefix) {
         layer = PinyinLayer.segmentForLayer(tailDigits.toString());
+        completeSelectionPinned = false;
         if (preferredPrefix != null && !preferredPrefix.isEmpty()) {
             for (int i = 0; i < layer.tailOptions.size(); i++) {
                 String option = layer.tailOptions.get(i);
@@ -172,7 +172,6 @@ public final class PinyinSession {
                     selectedIndex = i;
                     confirmed = false;
                     partialSelectionPinned = false;
-                    userPreviewed = false;
                     return;
                 }
             }
@@ -180,7 +179,6 @@ public final class PinyinSession {
         selectedIndex = preferredIndex(null);
         confirmed = false;
         partialSelectionPinned = false;
-        userPreviewed = false;
     }
 
     private int preferredIndex(String explicit) {

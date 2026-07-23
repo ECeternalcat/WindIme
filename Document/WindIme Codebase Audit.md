@@ -294,3 +294,31 @@ Tencent 后续建议作为联网下载的可选扩展词库：默认不加载、
 系统输入法设置中的 WindIme 齿轮通过 `method.xml/settingsActivity` 直接进入 `SettingsActivity`，不执行桌面图标分流。这样日系系统自动切回 iWnn 后，用户点击 WindIme 图标即可快速重新选择，同时仍能保留 iWnn 处理 PIN/预启动输入。
 
 返回键兼退格说明已从按键设置列表移除，只在校准向导的“退格删除”步骤显示。提示使用独立深色背景、白色粗体，不再与已捕获按键状态文本混排。
+
+## 16. 可靠性与可观测性批次（2026-07-24）
+
+本轮按改进建议 §3、§4、§5、§7 推进，并修复三处既有缺陷。纯 Java 逻辑均有 JUnit 覆盖，`gradlew testDebugUnitTest` 共 28 个套件、147 项、0 失败；`assembleDebug` 成功。
+
+### 16.1 设置落地（§4）
+
+新增纯逻辑 `EnglishCapitalization`（句首判定 + 首字母大写）与 `KeyFeedback`（震动 / 声音 / 无三档）。`GarahoImeService` 在 `onKeyDown` 消费点（`repeatCount==0`）触发反馈；IME 消费按键已抑制平台按键音，反馈为唯一来源。`onCommit` 在英文 T9 / 英文 Multi-tap 且开启首字母大写时，按光标前文本判定句首并大写。设置改动在下次 `onStartInput` 生效。
+
+### 16.2 候选翻页（§3）
+
+新增纯逻辑 `CandidatePagination`（页对齐：窗口始终从 `page*window` 开始，焦点越界跳整页）与位置指示器。`CandidateBar` 的 `visibleStart` 改为页对齐，`setCandidates` 刷新即重置候选焦点为 0（杜绝提交旧索引），底部新增 `n/total` 位置指示（仅翻页时显示）。
+
+### 16.3 用户数据可靠性（§5）
+
+新增 `AtomicStore`（临时文件 + `sync()` + rename 原子写、损坏文件移名 `.corrupt` 备份）与 `StoreResult`（空 / 过长 / 重复 / IO 校验）。`UserDictionary`、`PhraseStore` 全量改为原子写入、加入校验与去重、损坏时保留原文件并清空内存、新增 `exportTo` / `importFrom`（写入 `getExternalFilesDir`，免权限）。`ResetSettingsActivity` 扩展为五档独立清除（按键映射 / Rime 学习 / 用户词典 / 定型文 / 全部设置）。修复定型文编辑对话框“复制覆盖保存”的缺陷：编辑态改为保存(正)/复制(中)/删除(负)，BACK 取消。
+
+### 16.4 Rime 生命周期与可观测性（§7）
+
+新增 `RimeLifecycle`：进程级单调会话编号、单槽并发守卫（`beginSession`/`endSession`，CAS，`finally` 必释放）、结构化日志 `Rime[#id] event: detail`。`GarahoImeService.prepareRimeInBackground` 显式标注为 native Rime 唯一所有者：Service 重建或并发重试时若已有会话在跑则拒绝；native 已启动时走 `RimeEngine.tryReattach` 重新挂载，不再二次 `startupRime`、不触碰其文件；schema 就绪后调 `RimeEngine.syncUserData()` 同步学习；任一失败保留 Java T9 fallback 并置 FAILED，下次全新进程自动重试。`onDestroy` 只中断后台线程，从不调用 `exitRime`（native 为进程级资源）。
+
+### 16.5 三处缺陷修复
+
+1. 候选宽度自适应失效：`fae0ae3` 的按文本长度比例权重被三层重写覆盖回 `1f`；已恢复 `Math.max(1f, label.length())`，长词不再被截断。
+2. 快捷菜单绑定返回键无反应：菜单判断返回仅用 `keyCode == KEYCODE_BACK`，而绑定退格的物理返回键在这类日系机上经 KeyMapper 为 `BACKSPACE_DELETE`，被 `handleAction` 默认分支静默吞掉。已改为 `keyCode == BACK || action == BACKSPACE_DELETE`，快捷菜单与符号面板同步修复。
+3. T9 移动读音需按 OK：根因在 `PinyinSession`——`processDigit` 仅在 `confirmed` 时锁定音节，手动 `preview` 选中的完整音节未被携带，下一数字重新分词又回到默认读音。新增 `completeSelectionPinned`：预览完整音节时置位，下一数字自动锁定；自动默认不锁定，故 `426→hao`、`64→ni` 等多字母单音节仍正常组合。
+
+三处仍需 701KC 真机验证：候选宽度比例与长词截断、绑定返回键在快捷菜单子页/主页的导航、连打 `96 24 64` 切读音的实际候选。

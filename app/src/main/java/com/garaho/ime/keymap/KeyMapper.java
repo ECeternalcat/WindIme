@@ -3,30 +3,21 @@ package com.garaho.ime.keymap;
 import android.content.Context;
 import android.util.Log;
 
+import com.garaho.ime.settings.GarahoPrefs;
+
 import org.json.JSONException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Resolves physical {@link android.view.KeyEvent}s to abstract {@link InputAction}s
- * (design doc §3.1).
- *
- * <p>Strategy:
- * <ol>
- *   <li>If a user-calibrated {@code user_keymap.json} exists in filesDir, use it.</li>
- *   <li>Otherwise fall back to the bundled asset {@code garaho_keymap.json}.</li>
- * </ol>
- *
- * Lookup prefers {@code keycode} first (stable across devices that emit standard
- * Android keycodes), then falls back to {@code scan_code} for vendor-specific
- * function keys (Mail / TV / Camera on Kyocera family, etc.).
- */
+/** Resolves physical keys through an immutable factory map or one of four user slots. */
 public final class KeyMapper {
 
     private static final String TAG = "KeyMapper";
@@ -34,19 +25,12 @@ public final class KeyMapper {
     public static final String ASSET_DEFAULT = "garaho_keymap.json";
     public static final String USER_KEYMAP_FILE = "user_keymap.json";
 
-    /**
-     * Always-on fallback for standard Android keycodes (KEYCODE_0-9, STAR,
-     * POUND, DPAD_*, ENTER, DEL). A sparse {@code user_keymap.json} from the
-     * calibration wizard (which only captures function/nav keys) must never
-     * leave the T9 digit pad unresponsive, so these resolve regardless of what
-     * the loaded config happens to contain.
-     */
     private static final Map<Integer, InputAction> STANDARD_ANDROID;
     static {
         Map<Integer, InputAction> s = new HashMap<>();
-        s.put(7,  InputAction.INPUT_KEY_0);
-        s.put(8,  InputAction.INPUT_KEY_1);
-        s.put(9,  InputAction.INPUT_KEY_2);
+        s.put(7, InputAction.INPUT_KEY_0);
+        s.put(8, InputAction.INPUT_KEY_1);
+        s.put(9, InputAction.INPUT_KEY_2);
         s.put(10, InputAction.INPUT_KEY_3);
         s.put(11, InputAction.INPUT_KEY_4);
         s.put(12, InputAction.INPUT_KEY_5);
@@ -63,36 +47,45 @@ public final class KeyMapper {
         s.put(23, InputAction.CONFIRM_SELECTION);
         s.put(66, InputAction.CONFIRM_SELECTION);
         s.put(67, InputAction.BACKSPACE_DELETE);
-        STANDARD_ANDROID = java.util.Collections.unmodifiableMap(s);
+        STANDARD_ANDROID = Collections.unmodifiableMap(s);
     }
 
     private final Context context;
+    private final GarahoPrefs prefs;
     private KeyMapConfig config;
     private final Map<Integer, InputAction> keyCodeMap = new HashMap<>();
     private final Map<Integer, InputAction> scanCodeMap = new HashMap<>();
 
     public KeyMapper(Context context) {
         this.context = context.getApplicationContext();
+        prefs = new GarahoPrefs(this.context);
+        migrateLegacyConfig();
         reload();
     }
 
     public void reload() {
         synchronized (this) {
-            config = loadConfig();
+            int slot = prefs.getActiveKeymapSlot();
+            config = loadSlot(slot);
+            if (config == null) {
+                prefs.setActiveKeymapSlot(KeymapSlots.FACTORY);
+                config = loadFactory();
+            }
             keyCodeMap.clear();
             scanCodeMap.clear();
             if (config == null) {
                 return;
             }
-            for (KeyMapConfig.Mapping m : config.mappings) {
-                if (m.action == null || m.action == InputAction.NONE) {
+            for (KeyMapConfig.Mapping mapping : config.mappings) {
+                if (mapping.action == null || mapping.action == InputAction.NONE
+                        || isReservedFor(mapping.keycode, mapping.action)) {
                     continue;
                 }
-                if (m.keycode != 0) {
-                    keyCodeMap.put(m.keycode, m.action);
+                if (mapping.keycode != 0) {
+                    keyCodeMap.put(mapping.keycode, mapping.action);
                 }
-                if (m.scanCode != 0) {
-                    scanCodeMap.put(m.scanCode, m.action);
+                if (mapping.scanCode != 0) {
+                    scanCodeMap.put(mapping.scanCode, mapping.action);
                 }
             }
         }
@@ -109,108 +102,182 @@ public final class KeyMapper {
                 return byScan;
             }
             InputAction standard = STANDARD_ANDROID.get(keyCode);
-            if (standard != null) {
-                return standard;
-            }
-            return InputAction.NONE;
+            return standard == null ? InputAction.NONE : standard;
         }
+    }
+
+    public int getActiveSlot() {
+        return prefs.getActiveKeymapSlot();
     }
 
     public KeyMapConfig getConfig() {
         synchronized (this) {
-            return config;
+            return config == null ? null : config.copy();
         }
     }
 
-    /**
-     * @return the {@link InputAction} a keyCode is hard-reserved for by the
-     *         Android-standard fallback (digits, *, #, D-Pad, OK, ENTER, DEL),
-     *         or {@link InputAction#NONE} if it is a free/vendor key.
-     */
-    public static InputAction standardActionOf(int keyCode) {
-        InputAction a = STANDARD_ANDROID.get(keyCode);
-        return a == null ? InputAction.NONE : a;
+    public KeyMapConfig loadSlotConfig(int slot) {
+        KeyMapConfig loaded = loadSlot(slot);
+        return loaded == null ? null : loaded.copy();
     }
 
-    /**
-     * A key is reserved when the fallback binds it to a <i>different</i> core
-     * action than the one being calibrated - binding it would shadow input or
-     * navigation (e.g. pressing "2" to set 中英切换 would break T9 typing).
-     *
-     * <p>Exception: {@code *} (STAR) and {@code #} (POUND) are freely bindable.
-     * On many Japanese flip-phones these physical keys ARE the symbol / enter
-     * keys, so the user must be able to repurpose them.
-     */
-    public static boolean isReservedFor(int keyCode, InputAction target) {
-        if (keyCode == 17 || keyCode == 18) {
+    public KeyMapConfig baseConfigForSlot(int slot) {
+        KeyMapConfig loaded = loadSlot(slot);
+        if (loaded == null && KeymapSlots.isUser(slot)) {
+            loaded = loadFactory();
+        }
+        return loaded == null ? null : loaded.copy();
+    }
+
+    public boolean isSlotConfigured(int slot) {
+        return KeymapSlots.isUser(slot) && loadUserSlot(slot) != null;
+    }
+
+    public boolean activateSlot(int slot) {
+        if (!KeymapSlots.isValid(slot) || (KeymapSlots.isUser(slot) && !isSlotConfigured(slot))) {
             return false;
         }
-        InputAction std = standardActionOf(keyCode);
-        return std != InputAction.NONE && std != target;
+        prefs.setActiveKeymapSlot(slot);
+        reload();
+        return true;
     }
 
-    /**
-     * Persist a freshly calibrated mapping to {@code user_keymap.json} (doc §3.2 step 5).
-     */
-    public boolean saveUserConfig(KeyMapConfig newConfig) {
-        File out = new File(context.getFilesDir(), USER_KEYMAP_FILE);
+    public boolean saveUserSlot(int slot, KeyMapConfig newConfig) {
+        if (!KeymapSlots.isUser(slot) || newConfig == null) {
+            return false;
+        }
         try {
             String json = newConfig.toJson();
-            java.io.FileOutputStream fos = new java.io.FileOutputStream(out);
-            try {
-                fos.write(json.getBytes("UTF-8"));
-            } finally {
-                fos.close();
+            File target = userSlotFile(slot);
+            File temp = new File(target.getParentFile(), target.getName() + ".tmp");
+            try (FileOutputStream out = new FileOutputStream(temp)) {
+                out.write(json.getBytes("UTF-8"));
+                out.getFD().sync();
             }
-            reload();
+            KeyMapConfig.fromJson(readFully(new FileInputStream(temp)));
+            if (target.exists() && !target.delete()) {
+                return false;
+            }
+            if (!temp.renameTo(target)) {
+                return false;
+            }
+            if (getActiveSlot() == slot) {
+                reload();
+            }
             return true;
         } catch (IOException | JSONException e) {
-            Log.e(TAG, "Failed to save user keymap", e);
+            Log.e(TAG, "Failed to save keymap slot " + slot, e);
             return false;
         }
     }
 
-    /**
-     * Restore the bundled factory preset (Safe Escape Hatch, doc §5.2).
-     */
-    public boolean resetToFactory() {
-        File f = new File(context.getFilesDir(), USER_KEYMAP_FILE);
-        boolean deleted = !f.exists() || f.delete();
-        reload();
+    public boolean clearUserSlot(int slot) {
+        if (!KeymapSlots.isUser(slot)) {
+            return false;
+        }
+        if (getActiveSlot() == slot) {
+            prefs.setActiveKeymapSlot(KeymapSlots.FACTORY);
+        }
+        File file = userSlotFile(slot);
+        boolean deleted = !file.exists() || file.delete();
+        if (deleted) {
+            prefs.clearKeymapSlotName(slot);
+            reload();
+        }
         return deleted;
     }
 
-    private KeyMapConfig loadConfig() {
-        File userFile = new File(context.getFilesDir(), USER_KEYMAP_FILE);
-        if (userFile.exists()) {
-            try {
-                String json = readFully(new FileInputStream(userFile));
-                return KeyMapConfig.fromJson(json);
-            } catch (IOException | JSONException e) {
-                Log.w(TAG, "User keymap unreadable, falling back to asset", e);
-            }
+    /** Select the read-only factory map without deleting saved user slots. */
+    public boolean resetToFactory() {
+        prefs.setActiveKeymapSlot(KeymapSlots.FACTORY);
+        reload();
+        return config != null;
+    }
+
+    public boolean hasUserConfig() {
+        return getActiveSlot() != KeymapSlots.FACTORY;
+    }
+
+    static InputAction standardActionOf(int keyCode) {
+        InputAction action = STANDARD_ANDROID.get(keyCode);
+        return action == null ? InputAction.NONE : action;
+    }
+
+    public static boolean isReservedFor(int keyCode, InputAction target) {
+        if (keyCode == android.view.KeyEvent.KEYCODE_STAR
+                || keyCode == android.view.KeyEvent.KEYCODE_POUND) {
+            return false;
         }
-        try {
-            InputStream in = context.getAssets().open(ASSET_DEFAULT);
-            try {
-                String json = readFully(in);
-                return KeyMapConfig.fromJson(json);
-            } finally {
-                in.close();
-            }
+        InputAction standard = standardActionOf(keyCode);
+        return standard != InputAction.NONE && standard != target;
+    }
+
+    private KeyMapConfig loadSlot(int slot) {
+        if (slot == KeymapSlots.FACTORY) {
+            return loadFactory();
+        }
+        return KeymapSlots.isUser(slot) ? loadUserSlot(slot) : null;
+    }
+
+    private KeyMapConfig loadFactory() {
+        try (InputStream input = context.getAssets().open(ASSET_DEFAULT)) {
+            return KeyMapConfig.fromJson(readFully(input));
         } catch (IOException | JSONException e) {
-            Log.e(TAG, "Default asset keymap missing/unreadable", e);
+            Log.e(TAG, "Default keymap missing or unreadable", e);
             return null;
         }
     }
 
-    private static String readFully(InputStream in) throws IOException {
-        ByteArrayOutputStream buf = new ByteArrayOutputStream();
-        byte[] tmp = new byte[4096];
-        int n;
-        while ((n = in.read(tmp)) > 0) {
-            buf.write(tmp, 0, n);
+    private KeyMapConfig loadUserSlot(int slot) {
+        File file = userSlotFile(slot);
+        if (!file.exists()) {
+            return null;
         }
-        return buf.toString("UTF-8");
+        try (InputStream input = new FileInputStream(file)) {
+            return KeyMapConfig.fromJson(readFully(input));
+        } catch (IOException | JSONException e) {
+            Log.w(TAG, "User keymap slot unreadable: " + slot, e);
+            return null;
+        }
+    }
+
+    private File userSlotFile(int slot) {
+        return new File(context.getFilesDir(), KeymapSlots.fileName(slot));
+    }
+
+    private void migrateLegacyConfig() {
+        if (prefs.isLegacyKeymapMigrated()) {
+            return;
+        }
+        File legacy = new File(context.getFilesDir(), USER_KEYMAP_FILE);
+        if (!legacy.exists() || userSlotFile(1).exists()) {
+            prefs.markLegacyKeymapMigrated();
+            return;
+        }
+        try (InputStream input = new FileInputStream(legacy)) {
+            KeyMapConfig old = KeyMapConfig.fromJson(readFully(input));
+            if (!saveUserSlot(1, old)) {
+                return;
+            }
+            prefs.setKeymapSlotName(1,
+                    context.getString(com.garaho.ime.R.string.keymap_user_slot_default, 1));
+            prefs.setActiveKeymapSlot(1);
+            legacy.delete();
+        } catch (IOException | JSONException e) {
+            Log.w(TAG, "Legacy keymap is unreadable; keeping factory map", e);
+        }
+        prefs.markLegacyKeymapMigrated();
+    }
+
+    private static String readFully(InputStream input) throws IOException {
+        try (InputStream in = input) {
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] chunk = new byte[4096];
+            int count;
+            while ((count = in.read(chunk)) > 0) {
+                buffer.write(chunk, 0, count);
+            }
+            return buffer.toString("UTF-8");
+        }
     }
 }

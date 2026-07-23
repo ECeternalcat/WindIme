@@ -2,6 +2,7 @@ package com.garaho.ime;
 
 import com.garaho.ime.engine.ChineseMultiTapEngine;
 import com.garaho.ime.engine.EngineListener;
+import com.garaho.ime.engine.EnglishCapitalization;
 import com.garaho.ime.engine.EnglishMultiTapEngine;
 import com.garaho.ime.engine.EnglishT9Engine;
 import com.garaho.ime.engine.ImeEngine;
@@ -10,13 +11,19 @@ import com.garaho.ime.engine.LayeredPinyinEngine;
 import com.garaho.ime.engine.MultiTapSupport;
 import com.garaho.ime.engine.RimeEngine;
 import com.garaho.ime.engine.T9PinyinEngine;
+import com.garaho.ime.feedback.KeyFeedback;
 import com.garaho.ime.keymap.InputAction;
 import com.garaho.ime.keymap.KeyMapper;
+import com.garaho.ime.keymap.KeymapSlots;
 import com.garaho.ime.rime.RimeData;
+import com.garaho.ime.rime.RimeLifecycle;
 import com.garaho.ime.rime.RimeMaintenance;
 import com.garaho.ime.rime.RimeRuntimeStatus;
 import com.garaho.ime.settings.GarahoPrefs;
+import com.garaho.ime.settings.KeymapProfilesActivity;
 import com.garaho.ime.ui.CandidateBar;
+import com.garaho.ime.ui.QuickMenuPanel;
+import com.garaho.ime.ui.SettingsActivity;
 import com.garaho.ime.ui.SymbolPanel;
 
 import android.inputmethodservice.InputMethodService;
@@ -27,7 +34,9 @@ import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
+import android.widget.Toast;
 
 import java.util.List;
 
@@ -51,12 +60,19 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private static final String TAG = "GarahoIme";
     private static final long RESET_COMBO_WINDOW_MS = 5000;
     private static final long RIME_DEPLOY_TIMEOUT_MS = 30 * 60 * 1000L;
+    private static final long RIME_RETRY_DELAY_MS = 3000L;
+    private static final int RIME_MAX_RETRIES = 20;
+    private static final int CAPITALIZE_LOOKBACK = 16;
+    private static final String RIME_SCHEMA_ID = "rime_ice";
 
     private KeyMapper keyMapper;
+    private GarahoPrefs prefs;
+    private KeyFeedback keyFeedback;
     private ImeEngine pinyinEngine;
     private volatile RimeEngine pendingRimeEngine;
     private volatile boolean destroyed;
     private volatile Thread rimeInitThread;
+    private int rimeInitRetryCount;
     private EnglishT9Engine englishEngine;
     private ChineseMultiTapEngine zhMultiTapEngine;
     private EnglishMultiTapEngine enMultiTapEngine;
@@ -64,6 +80,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     private CandidateBar candidateBar;
     private SymbolPanel symbolPanel;
+    private QuickMenuPanel quickMenuPanel;
     private FrameLayout rootContainer;
 
     private boolean showModeBar = true;
@@ -77,6 +94,17 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private boolean backspaceHeld;
     private boolean poundHeld;
     private boolean consumeBoundBackKeyUp;
+    private boolean consumeMenuKeyUp;
+    private boolean quickMenuShowingKeymaps;
+    private boolean quickMenuShowingModes;
+    private int[] quickMenuKeymapSlots = new int[0];
+    private final InputMode[] quickMenuModes = {
+            InputMode.ZH,
+            InputMode.ZH_MTAP,
+            InputMode.EN,
+            InputMode.EN_MTAP,
+            InputMode.NUM,
+    };
     private final Handler resetComboHandler = new Handler(Looper.getMainLooper());
     private final Runnable resetComboRunnable = new Runnable() {
         @Override
@@ -102,7 +130,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         englishEngine = new EnglishT9Engine();
         englishEngine.setListener(this);
 
-        GarahoPrefs prefs = new GarahoPrefs(this);
+        prefs = new GarahoPrefs(this);
+        keyFeedback = new KeyFeedback(this);
+        keyFeedback.setMode(prefs.getFeedback());
         zhMultiTapEngine = new ChineseMultiTapEngine(prefs);
         zhMultiTapEngine.setListener(this);
         enMultiTapEngine = new EnglishMultiTapEngine(prefs);
@@ -141,6 +171,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     public void onStartInput(android.view.inputmethod.EditorInfo attribute, boolean restarting) {
         super.onStartInput(attribute, restarting);
         keyMapper.reload();
+        if (keyFeedback != null && prefs != null) {
+            keyFeedback.setMode(prefs.getFeedback());
+        }
         inputSessionActive = true;
         inputViewActive = false;
         showModeBar = true;
@@ -172,6 +205,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (symbolPanel != null && symbolPanel.isShowing()) {
             symbolPanel.dismiss();
         }
+        if (quickMenuPanel != null && quickMenuPanel.isShowing()) {
+            quickMenuPanel.dismiss();
+        }
         currentComposing = "";
         ImeEngine active = activeEngine();
         if (active != null) {
@@ -181,55 +217,184 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         super.onFinishInput();
     }
 
+    /**
+     * Sole owner of native Rime initialization (improvement doc §7). Runs on a
+     * background thread, assigns a monotonic session id for structured logging,
+     * and is serialized process-wide by {@link RimeLifecycle} so a Service
+     * recreate or concurrent retry cannot start a second maintenance session or
+     * call {@code startupRime} twice. On any failure it leaves the pure-Java
+     * T9 fallback active; the next fresh process start retries automatically.
+     *
+     * <p>The Runnable captures only a {@link java.lang.ref.WeakReference} to the
+     * Service and the application Context, so a long-running deploy (up to 30
+     * min) never prevents the Service from being GC'd (audit H-3).
+     */
     private void prepareRimeInBackground(final com.garaho.ime.user.UserWordSource userDict) {
-        Thread thread = new Thread(new Runnable() {
+        final int sid = RimeLifecycle.nextSessionId();
+        if (!RimeLifecycle.beginSession()) {
+            // Another init session is already running in this process (e.g.
+            // the thread from a previous Service instance is still winding
+            // down). Schedule a delayed retry so this instance eventually
+            // acquires the session slot once the old thread calls endSession().
+            Log.i(TAG, RimeLifecycle.format(sid, "init-deferred", "another session running; will retry"));
+            setRimeStatus(RimeRuntimeStatus.State.PREPARING, "部署进行中");
+            scheduleRimeInitRetry(userDict);
+            return;
+        }
+        startRimeInitThread(sid, userDict);
+    }
+
+    /**
+     * Poll every {@link #RIME_RETRY_DELAY_MS} until the process-wide session
+     * slot is free, then kick off the normal init thread. Gives up after
+     * {@link #RIME_MAX_RETRIES} attempts (~60 s) to avoid an infinite loop.
+     */
+    private void scheduleRimeInitRetry(final com.garaho.ime.user.UserWordSource userDict) {
+        if (destroyed || rimeInitRetryCount >= RIME_MAX_RETRIES) {
+            return;
+        }
+        rimeInitRetryCount++;
+        resetComboHandler.postDelayed(new Runnable() {
             @Override
             public void run() {
-                RimeData data = new RimeData(GarahoImeService.this);
-                if (RimeMaintenance.hasPending(GarahoImeService.this)
-                        && RimeEngine.hasStartedInProcess()) {
-                    setRimeStatus(RimeRuntimeStatus.State.PREPARING, "维护待进程重启执行");
-                    Log.w(TAG, "Rime maintenance deferred until a fresh process starts");
-                    return;
-                }
-                if (!RimeMaintenance.applyPending(GarahoImeService.this,
-                        data.getSharedDir(), data.getUserDir())) {
-                    setRimeStatus(RimeRuntimeStatus.State.FAILED, "维护操作失败");
-                    return;
-                }
-                if (!data.ensureExtracted(GarahoImeService.this) || destroyed) {
-                    Log.w(TAG, "rime-ice data unavailable; keeping Java T9 fallback");
-                    if (!destroyed) {
-                        setRimeStatus(RimeRuntimeStatus.State.FAILED, "词库解包失败");
-                    }
-                    return;
-                }
-                RimeEngine engine = RimeEngine.tryCreate(
-                        data.getSharedDir(), data.getUserDir(), BuildConfig.VERSION_NAME);
-                if (engine == null) {
-                    setRimeStatus(RimeRuntimeStatus.State.FAILED, "native Rime 不可用");
-                    Log.w(TAG, "rime-ice unavailable; keeping Java T9 fallback");
-                    return;
-                }
-                if (!engine.awaitSchema("rime_ice", RIME_DEPLOY_TIMEOUT_MS)) {
-                    if (!destroyed) {
-                        setRimeStatus(RimeRuntimeStatus.State.FAILED, "schema 部署超时");
-                    }
-                    Log.w(TAG, "rime-ice unavailable; keeping Java T9 fallback");
-                    return;
-                }
-                engine.setUserWordSource(userDict);
-                engine.setListener(GarahoImeService.this);
                 if (destroyed) {
                     return;
                 }
-                pendingRimeEngine = engine;
-                setRimeStatus(RimeRuntimeStatus.State.PREPARING, "已就绪，下次输入启用");
-                Log.i(TAG, "rime-ice ready; it will activate for the next input field");
+                int sid = RimeLifecycle.nextSessionId();
+                if (!RimeLifecycle.beginSession()) {
+                    // Old thread still holds the slot (may be in awaitSchema
+                    // or winding down). Keep polling.
+                    rlog(sid, "retry-waiting", "attempt " + rimeInitRetryCount);
+                    scheduleRimeInitRetry(userDict);
+                    return;
+                }
+                rlog(sid, "retry-acquired", "attempt " + rimeInitRetryCount);
+                startRimeInitThread(sid, userDict);
+            }
+        }, RIME_RETRY_DELAY_MS);
+    }
+
+    private void startRimeInitThread(final int sid, final com.garaho.ime.user.UserWordSource userDict) {
+        final java.lang.ref.WeakReference<GarahoImeService> selfRef =
+                new java.lang.ref.WeakReference<>(this);
+        final android.content.Context appContext = getApplicationContext();
+        Thread thread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    GarahoImeService self = selfRef.get();
+                    if (self == null || self.destroyed) {
+                        return;
+                    }
+                    if (RimeEngine.hasStartedInProcess()) {
+                        // Native Rime is already initialized in this process
+                        // (Service recreated). Reuse it; never call startupRime
+                        // again and do not touch its files while it is running.
+                        rlog(sid, "reattach", "native already started");
+                        if (RimeMaintenance.hasPending(appContext)) {
+                            rlog(sid, "maintenance-deferred", "native running; wait for fresh process");
+                        }
+                        RimeEngine engine = RimeEngine.tryReattach(RIME_SCHEMA_ID);
+                        if (engine == null) {
+                            self = selfRef.get();
+                            if (self != null && !self.destroyed) {
+                                self.setRimeStatus(RimeRuntimeStatus.State.FAILED, "重新挂载失败");
+                            }
+                            rlog(sid, "reattach-failed", "keeping Java T9 fallback");
+                            return;
+                        }
+                        self = selfRef.get();
+                        if (self != null && !self.destroyed) {
+                            self.attachReadyRime(engine, userDict, sid, "雾凇已就绪（重新挂载）");
+                        }
+                        return;
+                    }
+                    RimeData data = new RimeData(appContext);
+                    if (!RimeMaintenance.applyPending(appContext,
+                            data.getSharedDir(), data.getUserDir())) {
+                        self = selfRef.get();
+                        if (self != null && !self.destroyed) {
+                            self.setRimeStatus(RimeRuntimeStatus.State.FAILED, "维护操作失败");
+                        }
+                        rlog(sid, "maintenance-failed", "");
+                        return;
+                    }
+                    if (!data.ensureExtracted(appContext)) {
+                        self = selfRef.get();
+                        if (self != null && !self.destroyed) {
+                            self.setRimeStatus(RimeRuntimeStatus.State.FAILED, "词库解包失败");
+                        }
+                        rlog(sid, "extract-failed", "keeping Java T9 fallback");
+                        return;
+                    }
+                    self = selfRef.get();
+                    if (self == null || self.destroyed) {
+                        rlog(sid, "extract-failed", "service destroyed after extract");
+                        return;
+                    }
+                    rlog(sid, "startup", "begin native init");
+                    RimeEngine engine = RimeEngine.tryCreate(
+                            data.getSharedDir(), data.getUserDir(), BuildConfig.VERSION_NAME);
+                    if (engine == null) {
+                        self = selfRef.get();
+                        if (self != null && !self.destroyed) {
+                            self.setRimeStatus(RimeRuntimeStatus.State.FAILED, "native Rime 不可用");
+                        }
+                        rlog(sid, "startup-failed", "keeping Java T9 fallback");
+                        return;
+                    }
+                    rlog(sid, "await-schema", RIME_SCHEMA_ID);
+                    if (!engine.awaitSchema(RIME_SCHEMA_ID, RIME_DEPLOY_TIMEOUT_MS)) {
+                        self = selfRef.get();
+                        if (self != null && !self.destroyed) {
+                            self.setRimeStatus(RimeRuntimeStatus.State.FAILED, "schema 部署超时");
+                        }
+                        rlog(sid, "schema-timeout", "keeping Java T9 fallback");
+                        return;
+                    }
+                    // Safe point: deployment finished, no background work in flight.
+                    // Note: syncUserData is deferred to the settings/maintenance
+                    // page; calling it here on first install triggers a harmless
+                    // but confusing ".temp" error when no user dicts exist yet.
+                    rlog(sid, "schema-ready", RIME_SCHEMA_ID);
+                    self = selfRef.get();
+                    if (self != null && !self.destroyed) {
+                        self.attachReadyRime(engine, userDict, sid, "雾凇词库已就绪");
+                    }
+                } finally {
+                    RimeLifecycle.endSession();
+                }
             }
         }, "WindIme-RimeInit");
         rimeInitThread = thread;
         thread.start();
+    }
+
+    private void attachReadyRime(RimeEngine engine,
+                                 com.garaho.ime.user.UserWordSource userDict,
+                                 int sid, String detail) {
+        engine.setUserWordSource(userDict);
+        engine.setListener(GarahoImeService.this);
+        if (destroyed) {
+            rlog(sid, "abandoned", "service destroyed before attach");
+            return;
+        }
+        pendingRimeEngine = engine;
+        setRimeStatus(RimeRuntimeStatus.State.READY, detail);
+        rlog(sid, "ready", detail);
+        // If the input view is currently visible, adopt immediately on the
+        // main thread instead of waiting for the next onStartInputView (which
+        // may never come if the user does not re-focus a text field).
+        resetComboHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                adoptReadyRimeEngine();
+            }
+        });
+    }
+
+    private static void rlog(int sid, String event, String detail) {
+        Log.i(TAG, RimeLifecycle.format(sid, event, detail));
     }
 
     @Override
@@ -237,6 +402,14 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         destroyed = true;
         pendingRimeEngine = null;
         resetComboHandler.removeCallbacks(resetComboRunnable);
+        resetComboHandler.removeCallbacksAndMessages(null);
+        // Reset all engines to remove any pending Multi-tap Handler callbacks,
+        // preventing a short-lived leak of the Service via the timeoutRunnable
+        // (audit M-2).
+        if (pinyinEngine != null) pinyinEngine.reset();
+        if (englishEngine != null) englishEngine.reset();
+        if (zhMultiTapEngine != null) zhMultiTapEngine.reset();
+        if (enMultiTapEngine != null) enMultiTapEngine.reset();
         Thread thread = rimeInitThread;
         if (thread != null) {
             thread.interrupt();
@@ -309,8 +482,18 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         return true;
     }
 
+    /**
+     * Force the candidate strip to appear when the user focuses a text field
+     * or explicitly requests the IME. Configuration changes (keyboard
+     * visibility flip on flip-phones, locale, etc.) are excluded: returning
+     * {@code true} for those made the system re-evaluate the window on every
+     * config event, producing a visible show/hide flicker loop.
+     */
     @Override
     public boolean onShowInputRequested(int flags, boolean configChange) {
+        if (configChange) {
+            return false;
+        }
         return true;
     }
 
@@ -322,14 +505,55 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (!InputEventGate.accepts(inputSessionActive, inputViewActive)) {
             return false;
         }
-        // Symbol/phrase panel is modal: while open, route every key to it.
-        if (symbolPanel != null && symbolPanel.isShowing()) {
-            if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                symbolPanel.handleKey(keyCode);
+        if (keyCode == KeyEvent.KEYCODE_MENU) {
+            consumeMenuKeyUp = true;
+            if (event.getRepeatCount() == 0) {
+                keyFeedback.perform();
+                toggleQuickMenu();
             }
             return true;
         }
         InputAction action = keyMapper.resolve(keyCode, event.getScanCode());
+        // Single feedback chokepoint: the service consumes every recognized
+        // action below, which suppresses the platform key click; this is the
+        // sole user-configured vibration/sound. Gate on repeatCount==0 so a
+        // held backspace or digit auto-repeat does not spam feedback.
+        if (action != InputAction.NONE && event.getRepeatCount() == 0) {
+            keyFeedback.perform();
+        }
+        if (action == InputAction.SHOW_QUICK_MENU) {
+            if (event.getRepeatCount() == 0) {
+                toggleQuickMenu();
+            }
+            return true;
+        }
+        if (quickMenuPanel != null && quickMenuPanel.isShowing()) {
+            // Treat the bound back-as-backspace key (action == BACKSPACE_DELETE)
+            // as "back" here too: on many Japanese flip phones the physical
+            // return key is not KEYCODE_BACK, so checking only the keyCode left
+            // the bound key swallowed by handleAction()'s default branch and the
+            // user could not leave a sub-page (e.g. mode loop) back to the menu.
+            if (keyCode == KeyEvent.KEYCODE_BACK || action == InputAction.BACKSPACE_DELETE) {
+                if (quickMenuShowingKeymaps || quickMenuShowingModes) {
+                    showMainQuickMenu();
+                } else {
+                    quickMenuPanel.dismiss();
+                }
+            } else {
+                quickMenuPanel.handleAction(action);
+            }
+            return true;
+        }
+        // Symbol/phrase panel is modal. Route mapped actions so calibrated
+        // confirm and navigation keys work here as well as in the candidate UI.
+        if (symbolPanel != null && symbolPanel.isShowing()) {
+            if (keyCode == KeyEvent.KEYCODE_BACK || action == InputAction.BACKSPACE_DELETE) {
+                symbolPanel.dismiss();
+            } else if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                symbolPanel.handleAction(action);
+            }
+            return true;
+        }
         if (action != InputAction.NONE) {
             Log.d(TAG, "onKeyDown keyCode=" + keyCode + " scan=" + event.getScanCode() + " -> " + action + " (mode=" + mode + ")");
         }
@@ -362,6 +586,10 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     @Override
     public boolean onKeyUp(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_MENU && consumeMenuKeyUp) {
+            consumeMenuKeyUp = false;
+            return true;
+        }
         if (keyCode == KeyEvent.KEYCODE_BACK && consumeBoundBackKeyUp) {
             consumeBoundBackKeyUp = false;
             trackResetComboUp(InputAction.BACKSPACE_DELETE);
@@ -410,6 +638,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (showModeBar) {
             return handleModeBarAction(action);
         }
+        boolean hadImeComposition = currentComposing != null && currentComposing.length() > 0;
         // Composing state: multi-tap engines keep a cycling letter; finalise it
         // before any unrelated action so the letter isn't lost. Cycling digits
         // (2-9) handle finalize internally; backspace cancels the pending letter.
@@ -458,7 +687,13 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 }
                 return false;
             case CONFIRM_SELECTION:
-                return confirmSelection();
+                if (confirmSelection()) {
+                    return true;
+                }
+                if (hadImeComposition) {
+                    return true;
+                }
+                return performEditorActionOrNewline();
 
             case BACKSPACE_DELETE:
                 return handleBackspace();
@@ -469,6 +704,10 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
             case SHOW_SYMBOL_PANEL:
                 showSymbolPanel();
+                return true;
+
+            case SHOW_QUICK_MENU:
+                toggleQuickMenu();
                 return true;
 
             case SWITCH_RIME_SCHEMA:
@@ -489,12 +728,18 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 moveModeBar(1);
                 return true;
             case CONFIRM_SELECTION:
-                return confirmModeBar();
+                if (confirmModeBar()) {
+                    return true;
+                }
+                return performEditorActionOrNewline();
             case TOGGLE_LANG_MODE:
                 advanceModeBarToNextInputMode();
                 return true;
             case SHOW_SYMBOL_PANEL:
                 showSymbolPanel();
+                return true;
+            case SHOW_QUICK_MENU:
+                toggleQuickMenu();
                 return true;
             case BACKSPACE_DELETE:
                 return deleteFromEditor();
@@ -674,7 +919,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             return true;
         }
         if (active instanceof LayeredPinyinEngine && active.candidateCount() == 0) {
-            return true;
+            return currentComposing != null && currentComposing.length() > 0;
         }
         int focus = candidateBar.getFocusIndex();
         return active.selectCandidate(focus);
@@ -801,8 +1046,18 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         }
         if (barModes[modeBarIndex] == null) {
             showSymbolPanel();
+            return true;
         }
-        return true;
+        return false;
+    }
+
+    /** Use the host field's DONE/NEXT/SEARCH action, otherwise insert a newline. */
+    private boolean performEditorActionOrNewline() {
+        if (sendDefaultEditorAction(true)) {
+            return true;
+        }
+        android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
+        return ic != null && ic.commitText("\n", 1);
     }
 
     /** TOGGLE advances to the next input mode, skipping the 符 entry. */
@@ -876,6 +1131,172 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         symbolPanel.show(rootContainer);
     }
 
+    private void toggleQuickMenu() {
+        if (rootContainer == null) {
+            return;
+        }
+        if (quickMenuPanel != null && quickMenuPanel.isShowing()) {
+            quickMenuPanel.dismiss();
+            return;
+        }
+        if (symbolPanel != null && symbolPanel.isShowing()) {
+            symbolPanel.dismiss();
+        }
+        if (quickMenuPanel == null) {
+            quickMenuPanel = new QuickMenuPanel(this, new QuickMenuPanel.Callback() {
+                @Override
+                public void onQuickMenuItem(int position) {
+                    handleQuickMenuItem(position);
+                }
+            });
+        }
+        showMainQuickMenu();
+    }
+
+    private void showMainQuickMenu() {
+        quickMenuShowingKeymaps = false;
+        quickMenuShowingModes = false;
+        quickMenuPanel.show(rootContainer, R.string.quick_menu_title, new String[] {
+                getString(R.string.quick_menu_keymap),
+                getString(R.string.quick_menu_pick_ime),
+                getString(R.string.quick_menu_mode_loop),
+                getString(R.string.quick_menu_settings),
+        });
+    }
+
+    private void handleQuickMenuItem(int position) {
+        if (quickMenuShowingKeymaps) {
+            if (position >= 0 && position < quickMenuKeymapSlots.length) {
+                if (keyMapper.activateSlot(quickMenuKeymapSlots[position])) {
+                    quickMenuPanel.dismiss();
+                    enterModeBar();
+                }
+            }
+            return;
+        }
+        if (quickMenuShowingModes) {
+            toggleQuickMode(position);
+            return;
+        }
+        switch (position) {
+            case 0:
+                showQuickKeymapMenu();
+                break;
+            case 1:
+                quickMenuPanel.dismiss();
+                InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (imm != null) {
+                    imm.showInputMethodPicker();
+                }
+                break;
+            case 2:
+                showQuickModeLoopMenu(0);
+                break;
+            case 3:
+                quickMenuPanel.dismiss();
+                startActivity(new android.content.Intent(this, SettingsActivity.class)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void showQuickKeymapMenu() {
+        java.util.ArrayList<Integer> slots = new java.util.ArrayList<>();
+        java.util.ArrayList<String> labels = new java.util.ArrayList<>();
+        int activeSlot = keyMapper.getActiveSlot();
+        for (int slot = KeymapSlots.FACTORY; slot <= KeymapSlots.USER_MAX; slot++) {
+            if (slot == KeymapSlots.FACTORY || keyMapper.isSlotConfigured(slot)) {
+                slots.add(slot);
+                String name = KeymapProfilesActivity.slotName(this, slot);
+                labels.add(slot == activeSlot ? "● " + name : "○ " + name);
+            }
+        }
+        quickMenuKeymapSlots = new int[slots.size()];
+        for (int i = 0; i < slots.size(); i++) {
+            quickMenuKeymapSlots[i] = slots.get(i);
+        }
+        quickMenuShowingKeymaps = true;
+        quickMenuShowingModes = false;
+        quickMenuPanel.show(rootContainer, R.string.quick_menu_keymap_title,
+                labels.toArray(new String[0]));
+    }
+
+    private void showQuickModeLoopMenu(int selection) {
+        List<InputMode> enabled = new GarahoPrefs(this).getModeLoop();
+        String[] labels = new String[quickMenuModes.length];
+        boolean[] checked = new boolean[quickMenuModes.length];
+        for (int i = 0; i < quickMenuModes.length; i++) {
+            labels[i] = modeName(quickMenuModes[i]);
+            checked[i] = enabled.contains(quickMenuModes[i]);
+        }
+        quickMenuShowingKeymaps = false;
+        quickMenuShowingModes = true;
+        quickMenuPanel.showChecked(rootContainer, R.string.quick_menu_mode_loop, labels, checked);
+        quickMenuPanel.setSelection(selection);
+    }
+
+    private void toggleQuickMode(int position) {
+        if (position < 0 || position >= quickMenuModes.length) {
+            return;
+        }
+        GarahoPrefs prefs = new GarahoPrefs(this);
+        List<InputMode> current = prefs.getModeLoop();
+        java.util.LinkedHashSet<InputMode> selected = new java.util.LinkedHashSet<>(current);
+        InputMode target = quickMenuModes[position];
+        if (selected.contains(target)) {
+            if (selected.size() == 1) {
+                Toast.makeText(this, R.string.mode_loop_keep_one, Toast.LENGTH_SHORT).show();
+                return;
+            }
+            selected.remove(target);
+        } else {
+            selected.add(target);
+        }
+        java.util.ArrayList<InputMode> ordered = new java.util.ArrayList<>();
+        for (InputMode candidate : quickMenuModes) {
+            if (selected.contains(candidate)) {
+                ordered.add(candidate);
+            }
+        }
+        prefs.setModeLoop(ordered);
+        applyModeLoopChange(ordered);
+        showQuickModeLoopMenu(position);
+    }
+
+    private void applyModeLoopChange(List<InputMode> enabledModes) {
+        if (!enabledModes.contains(mode)) {
+            ImeEngine previous = activeEngine();
+            if (previous != null) {
+                previous.reset();
+            }
+            mode = enabledModes.get(0);
+            currentComposing = "";
+            enterModeBar();
+            return;
+        }
+        buildModeBar();
+        if (candidateBar == null) {
+            return;
+        }
+        candidateBar.setModeLabel(indicatorLabel());
+        if (showModeBar) {
+            candidateBar.setModeBar(barLabels, modeBarIndex);
+        }
+    }
+
+    private String modeName(InputMode inputMode) {
+        switch (inputMode) {
+            case ZH: return getString(R.string.mode_zh_t9);
+            case ZH_MTAP: return getString(R.string.mode_zh_mtap);
+            case EN: return getString(R.string.mode_en_t9);
+            case EN_MTAP: return getString(R.string.mode_en_mtap);
+            case NUM: return getString(R.string.mode_num);
+            default: return inputMode.name();
+        }
+    }
+
     private void commitChar(char c) {
         commitTextToEditor(String.valueOf(c));
     }
@@ -917,7 +1338,34 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     @Override
     public void onCommit(String text) {
+        if (text == null) {
+            return;
+        }
+        if ((mode == InputMode.EN || mode == InputMode.EN_MTAP)
+                && prefs != null && prefs.getAutoCapitalize()) {
+            text = maybeCapitalize(text);
+        }
         commitTextToEditor(text);
+    }
+
+    /**
+     * Upper-case the committed English text when the cursor sits at a sentence
+     * boundary (start of editor or after {@code . ! ?} / line break). Respects
+     * the {@code 首字母自动大写} setting and only applies to English modes.
+     */
+    private String maybeCapitalize(String text) {
+        if (text.length() == 0 || !Character.isLetter(text.charAt(0))) {
+            return text;
+        }
+        android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
+        if (ic == null) {
+            return text;
+        }
+        CharSequence before = ic.getTextBeforeCursor(CAPITALIZE_LOOKBACK, 0);
+        if (!EnglishCapitalization.atSentenceStart(before)) {
+            return text;
+        }
+        return EnglishCapitalization.capitalize(text);
     }
 
     /**

@@ -50,4 +50,19 @@
         android:orientation="horizontal"
         android:background="@color/candidate_bg" />
 
+    <TextView
+        android:id="@+id/position_indicator"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/candidate_bg"
+        android:gravity="end"
+        android:paddingLeft="4dp"
+        android:paddingTop="0dp"
+        android:paddingRight="4dp"
+        android:paddingBottom="1dp"
+        android:singleLine="true"
+        android:textColor="@color/primary_text"
+        android:textSize="10sp"
+        android:visibility="gone" />
+
 </merge>

@@ -34,9 +34,16 @@ public class KeyMapperReservedTest {
     }
 
     @Test
+    public void standardConfirmKeysAcceptedForConfirmStep() {
+        assertFalse(KeyMapper.isReservedFor(23, InputAction.CONFIRM_SELECTION));
+        assertFalse(KeyMapper.isReservedFor(66, InputAction.CONFIRM_SELECTION));
+    }
+
+    @Test
     public void vendorKeysAreFree() {
         // F1 (131) etc. are genuine function keys - never reserved
         assertFalse(KeyMapper.isReservedFor(131, InputAction.TOGGLE_LANG_MODE));
         assertFalse(KeyMapper.isReservedFor(133, InputAction.SHOW_SYMBOL_PANEL));
+        assertFalse(KeyMapper.isReservedFor(131, InputAction.SHOW_QUICK_MENU));
     }
 }

@@ -111,7 +111,8 @@ public final class RimeMaintenance {
         File[] children = userDir.listFiles();
         if (children != null) {
             for (File child : children) {
-                if (isLearningEntry(child)) {
+                String name = child.getName();
+                if (name.contains(".userdb") || "sync".equals(name)) {
                     total += sizeOf(child);
                 }
             }
@@ -129,7 +130,7 @@ public final class RimeMaintenance {
         out.append(label);
     }
 
-    static boolean deleteLearningFiles(File root) {
+    private static boolean deleteLearningFiles(File root) {
         if (root == null || !root.exists()) {
             return true;
         }
@@ -139,19 +140,12 @@ public final class RimeMaintenance {
             return true;
         }
         for (File child : children) {
-            if (isLearningEntry(child)) {
+            String name = child.getName();
+            if (name.contains(".userdb") || "sync".equals(name)) {
                 ok &= deleteRecursively(child);
             }
         }
         return ok;
-    }
-
-    static boolean isLearningEntry(File file) {
-        if (file == null) {
-            return false;
-        }
-        String name = file.getName();
-        return name.endsWith(".userdb") || "sync".equals(name);
     }
 
     private static boolean deleteRecursively(File file) {

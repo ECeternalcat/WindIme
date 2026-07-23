@@ -6,15 +6,16 @@ import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
- * Splits a T9 digit string into the three-layer model used by the composing UI
- * (layer 1 = locked/determined prefix, layer 2 = options for the active tail
- * group, layer 3 = word candidates derived elsewhere).
+ * Layered T9 pinyin segmentation for the 3-row composing UI.
  *
- * <p>{@link #segmentForLayer(String)} returns the determined leading syllables
- * as {@code prefix} and the trailing digit group as {@code tailDigits} with
- * {@code tailOptions} = every complete pinyin syllable that decodes to those
- * digits plus the single letters of the group's first key (for the
- * "still typing" case, e.g. {@code "24"} -> {@code [ai, bi, ci, a, b, c]}).
+ * <p>Splits a digit buffer into a locked syllable {@code prefix} plus an
+ * adjustable {@code tail}, and enumerates the possible readings of that tail:
+ * the complete pinyin syllables whose T9 code equals the tail digits, followed
+ * by the single letters of the tail's first digit (the "keep typing" options).
+ *
+ * <p>Example: {@code "24"} &rarr; prefix [], tail "24", options {@code [ai, bi, ci,
+ * a, b, c]}. The controller picks one tail option (via D-Pad) to form the
+ * composing pinyin, and the word-candidate row updates in real time.
  */
 public final class PinyinLayer {
 
@@ -24,9 +25,9 @@ public final class PinyinLayer {
         public final List<String> tailOptions;
 
         public LayerSegment(List<String> prefix, String tailDigits, List<String> tailOptions) {
-            this.prefix = prefix;
+            this.prefix = Collections.unmodifiableList(new ArrayList<>(prefix));
             this.tailDigits = tailDigits;
-            this.tailOptions = tailOptions;
+            this.tailOptions = Collections.unmodifiableList(new ArrayList<>(tailOptions));
         }
     }
 
@@ -37,49 +38,73 @@ public final class PinyinLayer {
         if (digits == null || digits.isEmpty()) {
             return new LayerSegment(Collections.<String>emptyList(), "", Collections.<String>emptyList());
         }
+        T9Segmenter.Segment best = T9Segmenter.bestEffort(digits);
+        List<String> segList = splitPhraseKey(best.phraseKey);
+        String remainder = best.remainder;
+
         List<String> prefix;
         String tailDigits;
-
-        List<String> full = T9Segmenter.bestSegmentation(digits);
-        if (!full.isEmpty()) {
-            // Fully segmentable: everything except the last syllable is treated
-            // as determined prefix; the last syllable is the active group.
-            prefix = new ArrayList<>(full.subList(0, full.size() - 1));
-            tailDigits = PinyinSyllables.t9Encode(full.get(full.size() - 1));
+        if (!remainder.isEmpty()) {
+            prefix = segList;
+            tailDigits = remainder;
+        } else if (segList.isEmpty()) {
+            prefix = Collections.emptyList();
+            tailDigits = digits;
         } else {
-            // Incomplete tail (e.g. trailing single key that can't close a
-            // syllable): greedily segment the determined prefix and leave the
-            // remainder as the active group.
-            T9Segmenter.Segment best = T9Segmenter.bestEffort(digits);
-            prefix = new ArrayList<>();
-            String phraseKey = best.phraseKey;
-            if (phraseKey != null && !phraseKey.isEmpty()) {
-                Collections.addAll(prefix, phraseKey.split("'"));
-            }
-            tailDigits = best.remainder.isEmpty() ? digits : best.remainder;
+            String lastSyllable = segList.get(segList.size() - 1);
+            prefix = segList.subList(0, segList.size() - 1);
+            tailDigits = PinyinSyllables.t9Encode(lastSyllable);
         }
-
-        return new LayerSegment(prefix, tailDigits, buildOptions(tailDigits));
+        return new LayerSegment(prefix, tailDigits, tailOptionsFor(tailDigits));
     }
 
-    private static List<String> buildOptions(String tailDigits) {
-        if (tailDigits == null || tailDigits.isEmpty()) {
-            return Collections.emptyList();
+    /** @return the apostrophe-joined phrase key for a prefix + a chosen tail reading. */
+    public static String compose(List<String> prefix, String tailOption) {
+        List<String> all = new ArrayList<>(prefix);
+        if (tailOption != null && !tailOption.isEmpty()) {
+            all.add(tailOption);
         }
+        return T9Segmenter.joinKey(all);
+    }
+
+    private static List<String> tailOptionsFor(String tailDigits) {
         LinkedHashSet<String> out = new LinkedHashSet<>();
-        // Complete syllables whose T9 code equals the whole tail group.
-        for (String syl : PinyinSyllables.syllablesForT9(tailDigits)) {
-            out.add(syl);
-        }
-        // Partial: the letters of the first key (the user may keep typing and
-        // extend one of them into a longer syllable).
-        int firstDigit = tailDigits.charAt(0) - '0';
-        String group = MultiTapCore.group(firstDigit);
-        if (group != null) {
-            for (int i = 0; i < group.length(); i++) {
-                out.add(String.valueOf(group.charAt(i)));
+        if (tailDigits != null && !tailDigits.isEmpty()) {
+            List<String> syls = new ArrayList<>(PinyinSyllables.syllablesForT9(tailDigits));
+            out.addAll(syls);
+            char firstDigit = tailDigits.charAt(0);
+            if (firstDigit >= '2' && firstDigit <= '9') {
+                String group = MultiTapCore.group(firstDigit - '0');
+                if (group != null) {
+                    for (int i = 0; i < group.length(); i++) {
+                        out.add(String.valueOf(group.charAt(i)));
+                    }
+                }
             }
         }
         return new ArrayList<>(out);
+    }
+
+    private static List<String> splitPhraseKey(String phraseKey) {
+        List<String> out = new ArrayList<>();
+        if (phraseKey == null || phraseKey.isEmpty()) {
+            return out;
+        }
+        StringBuilder cur = new StringBuilder();
+        for (int i = 0; i < phraseKey.length(); i++) {
+            char c = phraseKey.charAt(i);
+            if (c == '\'') {
+                if (cur.length() > 0) {
+                    out.add(cur.toString());
+                    cur.setLength(0);
+                }
+            } else {
+                cur.append(c);
+            }
+        }
+        if (cur.length() > 0) {
+            out.add(cur.toString());
+        }
+        return out;
     }
 }

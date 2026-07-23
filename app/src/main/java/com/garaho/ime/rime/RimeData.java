@@ -53,6 +53,7 @@ public final class RimeData {
             Log.w(TAG, "Could not create shared dir " + sharedDir);
             return false;
         }
+        ensureInstallationYaml(context);
         if (isUpToDate()) {
             return true;
         }
@@ -77,16 +78,11 @@ public final class RimeData {
         if (!marker.exists()) {
             return false;
         }
-        try {
-            InputStream in = new java.io.FileInputStream(marker);
-            try {
-                byte[] buf = new byte[64];
-                int n = in.read(buf);
-                String s = new String(buf, 0, Math.max(0, n), "UTF-8").trim();
-                return DATA_VERSION.equals(s);
-            } finally {
-                in.close();
-            }
+        try (InputStream in = new java.io.FileInputStream(marker)) {
+            byte[] buf = new byte[64];
+            int n = in.read(buf);
+            String s = new String(buf, 0, Math.max(0, n), "UTF-8").trim();
+            return DATA_VERSION.equals(s);
         } catch (IOException e) {
             return false;
         }
@@ -94,13 +90,8 @@ public final class RimeData {
 
     private void writeMarker() {
         File marker = new File(sharedDir, VERSION_MARKER);
-        try {
-            OutputStream out = new FileOutputStream(marker);
-            try {
-                out.write(DATA_VERSION.getBytes("UTF-8"));
-            } finally {
-                out.close();
-            }
+        try (OutputStream out = new FileOutputStream(marker)) {
+            out.write(DATA_VERSION.getBytes("UTF-8"));
         } catch (IOException e) {
             Log.w(TAG, "Could not write version marker", e);
         }
@@ -130,20 +121,45 @@ public final class RimeData {
     }
 
     private static void copyFile(AssetManager am, String assetPath, File dest) throws IOException {
-        InputStream in = am.open(assetPath);
-        try {
-            OutputStream out = new FileOutputStream(dest);
-            try {
-                byte[] buf = new byte[8192];
-                int n;
-                while ((n = in.read(buf)) > 0) {
-                    out.write(buf, 0, n);
-                }
-            } finally {
-                out.close();
+        try (InputStream in = am.open(assetPath);
+             OutputStream out = new FileOutputStream(dest)) {
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
             }
-        } finally {
-            in.close();
+        }
+    }
+
+    /**
+     * Create {@code installation.yaml} in the user dir if absent. librime
+     * requires this file for user-dict sync; without it the sync_dir resolves
+     * to an empty string, producing the "Error opening db '.temp'" failure.
+     */
+    private void ensureInstallationYaml(Context context) {
+        File inst = new File(userDir, "installation.yaml");
+        if (inst.exists()) {
+            return;
+        }
+        File syncDir = new File(userDir, "sync");
+        if (!syncDir.exists()) syncDir.mkdirs();
+        String deviceId = android.provider.Settings.Secure.getString(
+                context.getContentResolver(),
+                android.provider.Settings.Secure.ANDROID_ID);
+        if (deviceId == null || deviceId.isEmpty()) {
+            deviceId = "unknown_" + Long.toHexString(System.currentTimeMillis());
+        }
+        String content = "distribution_code_name: WindIme\n"
+                + "distribution_name: WindIme\n"
+                + "distribution_version: " + DATA_VERSION + "\n"
+                + "install_time: " + (System.currentTimeMillis() / 1000) + "\n"
+                + "installation_id: windime_" + deviceId + "\n"
+                + "sync_dir: " + syncDir.getAbsolutePath() + "\n";
+        try (OutputStream out = new FileOutputStream(inst)) {
+            out.write(content.getBytes("UTF-8"));
+            Log.i(TAG, "Created installation.yaml, sync_dir=" + syncDir);
+        } catch (IOException e) {
+            Log.w(TAG, "Could not write installation.yaml", e);
         }
     }
 

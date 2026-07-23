@@ -4,11 +4,19 @@ import com.garaho.ime.R;
 import com.garaho.ime.keymap.InputAction;
 import com.garaho.ime.keymap.KeyMapConfig;
 import com.garaho.ime.keymap.KeyMapper;
+import com.garaho.ime.keymap.KeymapSlots;
+import com.garaho.ime.settings.GarahoPrefs;
+import com.garaho.ime.settings.KeymapProfilesActivity;
 
+import android.app.AlertDialog;
 import android.app.Activity;
+import android.content.DialogInterface;
 import android.os.Bundle;
 import android.os.Vibrator;
 import android.view.KeyEvent;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.widget.EditText;
 import android.widget.TextView;
 
 import java.util.LinkedHashMap;
@@ -23,18 +31,14 @@ import java.util.Map;
  */
 public class SetupWizardActivity extends Activity {
 
+    public static final String EXTRA_TARGET_SLOT = "target_slot";
+
     private static final long BUZZ_MS = 50;
 
-    /**
-     * Only device-specific function keys are calibrated. The D-Pad
-     * (NAV_UP/DOWN/LEFT/RIGHT), confirm (DPAD_CENTER/ENTER) and digit keys are
-     * Android-standard keycodes already covered by the bundled keymap and the
-     * always-on {@code STANDARD_ANDROID} fallback in {@code KeyMapper}, so they
-     * never need binding.
-     */
     private static final InputAction[] STEPS = {
             InputAction.TOGGLE_LANG_MODE,
             InputAction.SHOW_SYMBOL_PANEL,
+            InputAction.SHOW_QUICK_MENU,
             InputAction.BACKSPACE_DELETE,
     };
 
@@ -43,8 +47,13 @@ public class SetupWizardActivity extends Activity {
     private TextView statusView;
     private int currentStep = 0;
     private final Map<InputAction, KeyMapConfig.Mapping> captured = new LinkedHashMap<>();
+    private final java.util.Set<InputAction> skipped = new java.util.LinkedHashSet<>();
     private Vibrator vibrator;
     private KeyMapper keyMapper;
+    private GarahoPrefs prefs;
+    private KeyMapConfig baseConfig;
+    private int targetSlot;
+    private boolean finished;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -55,61 +64,103 @@ public class SetupWizardActivity extends Activity {
         statusView = findViewById(R.id.wizard_status);
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
         keyMapper = new KeyMapper(this);
+        prefs = new GarahoPrefs(this);
+        targetSlot = getIntent().getIntExtra(EXTRA_TARGET_SLOT, -1);
+        if (!KeymapSlots.isUser(targetSlot)) {
+            finish();
+            return;
+        }
+        baseConfig = keyMapper.baseConfigForSlot(targetSlot);
+        if (baseConfig == null) {
+            finish();
+            return;
+        }
         renderStep();
     }
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        // BACK skips the current step (some flip-phones have no dedicated
-        // symbol / language key); after the last step BACK finishes normally.
-        if (keyCode == KeyEvent.KEYCODE_BACK) {
-            if (currentStep < STEPS.length) {
-                currentStep++;
-                if (currentStep >= STEPS.length) {
-                    finishWizard();
-                } else {
-                    renderStep();
-                }
-                return true;
-            }
+        if (finished || currentStep >= STEPS.length) {
             return super.onKeyDown(keyCode, event);
         }
-        if (currentStep >= STEPS.length) {
-            return super.onKeyDown(keyCode, event);
-        }
-        InputAction target = STEPS[currentStep];
-        // Reject keys reserved for core input/navigation (digits, *, #, D-Pad,
-        // OK, ENTER) - binding them to a function would shadow T9 typing or
-        // cursor movement. Confirming the standard DEL(67) for the backspace
-        // step is allowed.
-        if (KeyMapper.isReservedFor(keyCode, target)) {
-            tipView.setText(R.string.wizard_reserved_key);
-            tipView.setVisibility(android.view.View.VISIBLE);
-            buzz();
+        if (event.getRepeatCount() > 0) {
             return true;
         }
-        // Reject a key already bound to another action this session.
-        for (Map.Entry<InputAction, KeyMapConfig.Mapping> e : captured.entrySet()) {
-            KeyMapConfig.Mapping m = e.getValue();
-            if (e.getKey() != target
-                    && (m.keycode == keyCode
-                    || (event.getScanCode() != 0 && m.scanCode == event.getScanCode()))) {
-                tipView.setText(R.string.wizard_already_bound);
-                tipView.setVisibility(android.view.View.VISIBLE);
-                buzz();
-                return true;
-            }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+            skipCurrentStep();
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+            goToPreviousStep();
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+            skipCurrentStep();
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+            return true;
+        }
+        InputAction target = STEPS[currentStep];
+        if (keyCode == KeyEvent.KEYCODE_BACK && target != InputAction.BACKSPACE_DELETE) {
+            finish();
+            return true;
+        }
+        if (KeyMapper.isReservedFor(keyCode, target)) {
+            tipView.setText(R.string.wizard_key_reserved);
+            tipView.setVisibility(android.view.View.VISIBLE);
+            return true;
+        }
+        if (isAlreadyCaptured(keyCode, event.getScanCode())) {
+            tipView.setText(R.string.wizard_key_duplicate);
+            tipView.setVisibility(android.view.View.VISIBLE);
+            return true;
         }
         KeyMapConfig.Mapping m = new KeyMapConfig.Mapping(event.getScanCode(), keyCode, target);
         captured.put(target, m);
+        skipped.remove(target);
         buzz();
+        advanceStep();
+        return true;
+    }
+
+    private void skipCurrentStep() {
+        InputAction target = STEPS[currentStep];
+        captured.remove(target);
+        skipped.add(target);
+        advanceStep();
+    }
+
+    private void goToPreviousStep() {
+        if (currentStep == 0) {
+            return;
+        }
+        currentStep--;
+        InputAction target = STEPS[currentStep];
+        captured.remove(target);
+        skipped.remove(target);
+        renderStep();
+    }
+
+    private void advanceStep() {
         currentStep++;
         if (currentStep >= STEPS.length) {
             finishWizard();
         } else {
             renderStep();
         }
-        return true;
+    }
+
+    private boolean isAlreadyCaptured(int keyCode, int scanCode) {
+        for (KeyMapConfig.Mapping mapping : captured.values()) {
+            if (keyCode != 0 && mapping.keycode == keyCode) {
+                return true;
+            }
+            if (scanCode != 0 && mapping.scanCode == scanCode) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void renderStep() {
@@ -117,52 +168,83 @@ public class SetupWizardActivity extends Activity {
             return;
         }
         InputAction a = STEPS[currentStep];
-        promptView.setText(getString(R.string.wizard_press_action_prompt, displayName(a)));
-        tipView.setText(R.string.wizard_skip_tip);
-        tipView.setVisibility(android.view.View.VISIBLE);
+        promptView.setText(getString(R.string.wizard_target_format,
+                KeymapProfilesActivity.slotName(this, targetSlot),
+                getString(R.string.wizard_press_action_prompt, displayName(a))));
+        if (a == InputAction.BACKSPACE_DELETE) {
+            tipView.setText(getString(R.string.wizard_controls) + "\n"
+                    + getString(R.string.wizard_back_as_delete_tip));
+            tipView.setVisibility(android.view.View.VISIBLE);
+        } else {
+            tipView.setText(R.string.wizard_controls);
+            tipView.setVisibility(android.view.View.VISIBLE);
+        }
         StringBuilder sb = new StringBuilder();
         sb.append(getString(R.string.wizard_step_format, currentStep + 1, STEPS.length)).append('\n');
         for (Map.Entry<InputAction, KeyMapConfig.Mapping> e : captured.entrySet()) {
             sb.append(displayName(e.getKey()))
               .append(" -> sc=").append(e.getValue().scanCode)
               .append(" kc=").append(e.getValue().keycode)
-              .append('\n');
+               .append('\n');
+        }
+        for (InputAction action : skipped) {
+            sb.append(displayName(action)).append(" -> ")
+                    .append(getString(R.string.wizard_skipped)).append('\n');
         }
         statusView.setText(sb.toString());
     }
 
     private void finishWizard() {
-        // Start from the factory default so the T9 digit pad, D-Pad and
-        // enter/backspace stay mapped even though the wizard only captures a
-        // handful of function keys. Calibrated captures then override the
-        // matching action, and everything is written to user_keymap.json.
-        KeyMapConfig config = keyMapper.getConfig();
-        if (config == null) {
-            config = new KeyMapConfig();
-        }
-        for (KeyMapConfig.Mapping m : config.mappings) {
-            if (captured.containsKey(m.action)) {
-                m.scanCode = captured.get(m.action).scanCode;
-                m.keycode = captured.get(m.action).keycode;
-            }
-        }
-        for (KeyMapConfig.Mapping m : captured.values()) {
-            boolean present = false;
-            for (KeyMapConfig.Mapping existing : config.mappings) {
-                if (existing.action == m.action) {
-                    present = true;
-                    break;
-                }
-            }
-            if (!present) {
-                config.mappings.add(new KeyMapConfig.Mapping(m.scanCode, m.keycode, m.action));
-            }
-        }
-        config.deviceProfile = "User_Calibrated";
-        config.version = KeyMapConfig.DEFAULT_VERSION;
-        boolean ok = keyMapper.saveUserConfig(config);
-        promptView.setText(ok ? R.string.wizard_done_ok : R.string.wizard_done_fail);
-        statusView.setText(config.deviceProfile + " (" + config.mappings.size() + ")");
+        finished = true;
+        final KeyMapConfig result = KeyMapConfig.merge(baseConfig, captured);
+        result.deviceProfile = "User_Keymap_" + targetSlot;
+        result.version = KeyMapConfig.DEFAULT_VERSION;
+        showNameDialog(result);
+    }
+
+    private void showNameDialog(final KeyMapConfig result) {
+        View body = LayoutInflater.from(this).inflate(R.layout.dialog_keymap_name, null);
+        final EditText field = body.findViewById(R.id.keymap_name);
+        field.setText(KeymapProfilesActivity.slotName(this, targetSlot));
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.wizard_name_config)
+                .setView(body)
+                .setPositiveButton(R.string.wizard_save_and_use, null)
+                .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        finished = false;
+                        currentStep = STEPS.length - 1;
+                        renderStep();
+                    }
+                })
+                .create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(view -> {
+                    String name = field.getText().toString().trim();
+                    if (name.isEmpty()) {
+                        field.setError(getString(R.string.keymap_name_required));
+                        return;
+                    }
+                    if (!keyMapper.saveUserSlot(targetSlot, result)) {
+                        field.setError(getString(R.string.wizard_done_fail));
+                        return;
+                    }
+                    prefs.setKeymapSlotName(targetSlot, name);
+                    keyMapper.activateSlot(targetSlot);
+                    dialog.dismiss();
+                    showDone(name);
+                }));
+        dialog.show();
+        field.requestFocus();
+        field.selectAll();
+    }
+
+    private void showDone(String name) {
+        promptView.setText(R.string.wizard_done_ok);
+        statusView.setText(getString(R.string.wizard_saved_profile, name));
+        tipView.setText(R.string.wizard_done_controls);
+        tipView.setVisibility(View.VISIBLE);
+        setResult(RESULT_OK);
     }
 
     private void buzz() {
@@ -175,6 +257,7 @@ public class SetupWizardActivity extends Activity {
         switch (a) {
             case TOGGLE_LANG_MODE: return getString(R.string.action_lang_mode);
             case SHOW_SYMBOL_PANEL: return getString(R.string.action_symbol_panel);
+            case SHOW_QUICK_MENU: return getString(R.string.action_quick_menu);
             case BACKSPACE_DELETE: return getString(R.string.action_backspace);
             case CONFIRM_SELECTION: return getString(R.string.action_confirm);
             case NAV_UP: return getString(R.string.action_nav_up);

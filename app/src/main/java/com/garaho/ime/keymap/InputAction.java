@@ -24,6 +24,7 @@ public enum InputAction {
 
     TOGGLE_LANG_MODE,
     SHOW_SYMBOL_PANEL,
+    SHOW_QUICK_MENU,
     SWITCH_RIME_SCHEMA,
 
     NAV_LEFT,

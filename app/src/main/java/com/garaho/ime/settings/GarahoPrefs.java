@@ -27,6 +27,9 @@ public final class GarahoPrefs {
     public static final String KEY_SHOW_INDICATOR = "show_indicator";
     public static final String KEY_AUTO_CAPS = "auto_caps";
     public static final String KEY_MTAP_TIMEOUT = "mtap_timeout";
+    public static final String KEY_ACTIVE_KEYMAP_SLOT = "active_keymap_slot";
+    public static final String KEY_KEYMAP_LEGACY_MIGRATED = "keymap_legacy_migrated";
+    private static final String KEY_KEYMAP_SLOT_NAME_PREFIX = "keymap_slot_name_";
 
     public static final String FEEDBACK_VIBRATE = "vibrate";
     public static final String FEEDBACK_SOUND = "sound";
@@ -110,6 +113,40 @@ public final class GarahoPrefs {
 
     public void setMultiTapTimeout(int ms) {
         sp.edit().putInt(KEY_MTAP_TIMEOUT, ms).apply();
+    }
+
+    public int getActiveKeymapSlot() {
+        int slot = sp.getInt(KEY_ACTIVE_KEYMAP_SLOT, 0);
+        return slot >= 0 && slot <= 4 ? slot : 0;
+    }
+
+    public void setActiveKeymapSlot(int slot) {
+        sp.edit().putInt(KEY_ACTIVE_KEYMAP_SLOT, slot >= 0 && slot <= 4 ? slot : 0).apply();
+    }
+
+    public String getKeymapSlotName(int slot) {
+        return sp.getString(KEY_KEYMAP_SLOT_NAME_PREFIX + slot, null);
+    }
+
+    public void setKeymapSlotName(int slot, String name) {
+        sp.edit().putString(KEY_KEYMAP_SLOT_NAME_PREFIX + slot, name).apply();
+    }
+
+    public void clearKeymapSlotName(int slot) {
+        sp.edit().remove(KEY_KEYMAP_SLOT_NAME_PREFIX + slot).apply();
+    }
+
+    public boolean isLegacyKeymapMigrated() {
+        return sp.getBoolean(KEY_KEYMAP_LEGACY_MIGRATED, false);
+    }
+
+    public boolean markLegacyKeymapMigrated() {
+        return sp.edit().putBoolean(KEY_KEYMAP_LEGACY_MIGRATED, true).commit();
+    }
+
+    /** Wipe every persisted preference, returning to compiled defaults. */
+    public void clearAll() {
+        sp.edit().clear().apply();
     }
 
     public static List<String> feedbackOptions() {

@@ -4,6 +4,7 @@ import org.json.JSONException;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertTrue;
 
 public class KeyMapConfigTest {
@@ -60,5 +61,65 @@ public class KeyMapConfigTest {
         assertEquals(22, parsed.mappings.get(0).keycode);
         assertEquals(InputAction.SHOW_SYMBOL_PANEL, parsed.mappings.get(1).action);
         assertTrue(json.contains("\"action\": \"NAV_UP\""));
+    }
+
+    @Test
+    public void copyIsDeep() {
+        KeyMapConfig original = new KeyMapConfig();
+        original.deviceProfile = "Original";
+        original.mappings.add(new KeyMapConfig.Mapping(10, 20, InputAction.TOGGLE_LANG_MODE));
+
+        KeyMapConfig copy = original.copy();
+        copy.deviceProfile = "Copy";
+        copy.mappings.get(0).keycode = 99;
+
+        assertNotSame(original, copy);
+        assertNotSame(original.mappings.get(0), copy.mappings.get(0));
+        assertEquals("Original", original.deviceProfile);
+        assertEquals(20, original.mappings.get(0).keycode);
+    }
+
+    @Test
+    public void mergeReplacesActionAndConflictingPhysicalKey() {
+        KeyMapConfig base = new KeyMapConfig();
+        base.mappings.add(new KeyMapConfig.Mapping(10, 100, InputAction.TOGGLE_LANG_MODE));
+        base.mappings.add(new KeyMapConfig.Mapping(20, 200, InputAction.SHOW_SYMBOL_PANEL));
+        base.mappings.add(new KeyMapConfig.Mapping(30, 300, InputAction.BACKSPACE_DELETE));
+
+        java.util.Map<InputAction, KeyMapConfig.Mapping> replacements = new java.util.LinkedHashMap<>();
+        replacements.put(InputAction.TOGGLE_LANG_MODE,
+                new KeyMapConfig.Mapping(20, 200, InputAction.TOGGLE_LANG_MODE));
+
+        KeyMapConfig merged = KeyMapConfig.merge(base, replacements);
+
+        assertEquals(2, merged.mappings.size());
+        assertEquals(InputAction.BACKSPACE_DELETE, merged.mappings.get(0).action);
+        assertEquals(InputAction.TOGGLE_LANG_MODE, merged.mappings.get(1).action);
+        assertEquals(200, merged.mappings.get(1).keycode);
+        assertEquals(3, base.mappings.size());
+    }
+
+    @Test
+    public void mergeWithNoCapturesPreservesDetachedBase() {
+        KeyMapConfig base = new KeyMapConfig();
+        base.mappings.add(new KeyMapConfig.Mapping(10, 100, InputAction.TOGGLE_LANG_MODE));
+
+        KeyMapConfig merged = KeyMapConfig.merge(base,
+                java.util.Collections.<InputAction, KeyMapConfig.Mapping>emptyMap());
+        merged.mappings.get(0).keycode = 999;
+
+        assertEquals(100, base.mappings.get(0).keycode);
+    }
+
+    @Test
+    public void quickMenuActionRoundTrips() throws JSONException {
+        KeyMapConfig config = new KeyMapConfig();
+        config.mappings.add(new KeyMapConfig.Mapping(59, 131, InputAction.SHOW_QUICK_MENU));
+
+        KeyMapConfig parsed = KeyMapConfig.fromJson(config.toJson());
+
+        assertEquals(InputAction.SHOW_QUICK_MENU, parsed.mappings.get(0).action);
+        assertEquals(59, parsed.mappings.get(0).scanCode);
+        assertEquals(131, parsed.mappings.get(0).keycode);
     }
 }

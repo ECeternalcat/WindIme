@@ -1,6 +1,7 @@
 package com.garaho.ime.ui;
 
 import com.garaho.ime.R;
+import com.garaho.ime.settings.AboutActivity;
 import com.garaho.ime.settings.BaseMenuActivity;
 import com.garaho.ime.settings.InputSettingsActivity;
 import com.garaho.ime.settings.KeymapSettingsActivity;
@@ -38,6 +39,7 @@ public class SettingsActivity extends BaseMenuActivity {
                 getString(R.string.settings_user_dict),
                 getString(R.string.settings_phrase),
                 getString(R.string.settings_reset),
+                getString(R.string.settings_about),
         };
         setMenuItems(items, new AdapterView.OnItemClickListener() {
             @Override
@@ -50,6 +52,7 @@ public class SettingsActivity extends BaseMenuActivity {
                     case 3: target = UserDictActivity.class; break;
                     case 4: target = PhraseActivity.class; break;
                     case 5: target = ResetSettingsActivity.class; break;
+                    case 6: target = AboutActivity.class; break;
                     default: return;
                 }
                 startActivity(new Intent(SettingsActivity.this, target));

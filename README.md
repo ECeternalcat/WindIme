@@ -27,24 +27,36 @@
 
 ### 三层拼音 UI（中文 T9）
 - **第 1 层**：拼音预览（`ni'hao`）
-- **第 2 层**：当前数字组的「读音」选项（如按 `2 4` → `ai / bi / ci / a / b / c`），◀▶ + ▲▼ 选择；**光标移过去即锁定**，无需按 OK
-- **第 3 层**：候选词
+- **第 2 层**：当前数字组的「读音」选项（如按 `2 4` → `ai / bi / ci / a / b / c`），◀▶ + ▲▼ 选择；**光标移过去即锁定**，无需按 OK；连续打字时移动选中的完整音节会自动锁定，便于 `96 24 64 → wo|ai|ni` 这类连打
+- **第 3 层**：候选词；超过一屏时 ◀▶ 翻页，右下角显示 `n/总` 位置；候选格宽度按词长自适应，长词不再被截断
 
 ### 符号 / 定型文面板
 全屏网格，顶部 **符号 | 定型文** 页签（▲ 在首行切换页签）。符号页为标点网格，定型文页列出用户预设的常用短语，选中即上屏。
 
-### 按键校准向导（0-Touch）
-仅校准**真正因机型而异的功能键**：中英切换、符号表、退格（可选）。
+### MENU 快捷菜单
+当日系翻盖机系统把当前左软键标记为 **MENU** 时，可通过按键校准把该场景实际发送的 KeyCode/ScanCode 绑定为“快捷菜单”。标准 Android `KEYCODE_MENU` 仍可直接打开：
+
+- 在系统默认及已创建的用户映射之间切换
+- 打开系统输入法选择器
+- 直接勾选参与循环的 T9、Multi-tap 和数字模式
+- 打开 WindIme 设置
+
+自定义绑定只在 WindIme 输入会话中生效，不会改变机身邮箱键或其他软键在桌面、系统和其他应用中的用途。
+
+### 按键校准与多配置管理（0-Touch）
+仅校准**真正因机型而异的功能键**：中英切换、符号表、快捷菜单、退格（可选）。提供只读系统默认映射和 4 个可命名的用户配置，可查看、切换、覆盖校准及删除。
 - 数字 0-9、方向键、确认键等 Android 标准键**无需绑定**（由内置兜底表硬性保障）。
 - `*` / `#` 可自由绑定（日系机常作符号/回车键）。
-- 按 **返回** 跳过当前步，不会死锁。
+- 校准时 **OK / ENTER** 或 **右方向键**跳过当前步骤，左方向键返回上一步；标准方向键和确认键不会被误绑定。
 
 ### 设置页（D-Pad 全程可达）
 主菜单五分类：输入设定 / 输入法与按键 / 用户词典 / 定型文 / 重置。
-- **输入设定**：设置默认输入法（启用 + 切换两步引导）、模式循环、按键反馈、首字母大写、Multi-tap 间隔
-- **用户词典**：自造词（拼音→汉字）CRUD，自动并入候选
-- **定型文**：邮箱 / 问候 / 个人信息等快捷短语 CRUD
-- **重置**：恢复出厂按键映射 / 清空 RIME 用户数据
+- **输入设定**：设置默认输入法（启用 + 切换两步引导）、模式循环、按键反馈（震动/声音/无）、首字母大写、Multi-tap 间隔
+- **用户词典**：自造词（拼音→汉字）CRUD，自动并入候选；支持导出/导入（写入应用专属外部目录，可用 ADB/MTP 取放）
+- **定型文**：邮箱 / 问候 / 个人信息等快捷短语 CRUD；编辑可保存/复制/删除互不覆盖；支持导出/导入
+- **重置**：切换默认按键映射 / 清除 Rime 学习 / 清空用户词典 / 清空定型文 / 清除全部设置（各档独立确认）
+
+> 用户词典与定型文采用原子写入（临时文件 + 替换），JSON 损坏时原文件会备份为 `.corrupt` 保留，写入前对空内容、过长内容和重复项做校验。
 
 从桌面图标或**系统输入法设置的齿轮**都能进入。
 
@@ -112,11 +124,12 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 | 包 | 职责 |
 |---|---|
 | `keymap/` | `InputAction` 抽象、`KeyMapper`（JSON + 标准兜底）、`KeyMapConfig` |
-| `engine/` | `ImeEngine` 接口；`T9PinyinEngine`（纯 Java 兜底）、`RimeEngine`（librime）、`EnglishT9Engine`、`*MultiTapEngine`、`PinyinSession`/`PinyinLayer`（三层模型）、`T9Segmenter`、`PinyinSyllables`/`PinyinDictionary` |
-| `rime/` | `RimeData`（assets→filesDir 解包）、`RimeMaintenance`、运行时状态 |
-| `user/` | `UserDictionary`、`PhraseStore`（JSON 持久化） |
+| `engine/` | `ImeEngine` 接口；`T9PinyinEngine`（纯 Java 兜底）、`RimeEngine`（librime）、`EnglishT9Engine`、`*MultiTapEngine`、`PinyinSession`/`PinyinLayer`（三层模型）、`EnglishCapitalization`（句首大写）、`T9Segmenter`、`PinyinSyllables`/`PinyinDictionary` |
+| `rime/` | `RimeData`（assets→filesDir 解包）、`RimeMaintenance`、`RimeRuntimeStatus`、`RimeLifecycle`（进程级会话编号/单一所有者/结构化日志） |
+| `user/` | `UserDictionary`、`PhraseStore`（原子 JSON 持久化 + 导入导出）、`AtomicStore`、`StoreResult` |
+| `feedback/` | `KeyFeedback`（震动/声音/无三档按键反馈） |
 | `settings/` | 设置页、`GarahoPrefs`、校准向导等 |
-| `ui/` | `CandidateBar`（三层候选条）、`SymbolPanel`、`SetupWizardActivity` |
+| `ui/` | `CandidateBar`（三层候选条 + 翻页位置指示）、`CandidatePagination`、`SymbolPanel`、`QuickMenuPanel`、`SetupWizardActivity` |
 | `com.osfans.trime.core/` | 内嵌的 JNI 契约类（匹配预编译 `librime_jni.so` 的符号名） |
 
 纯 Java 逻辑（引擎、切分、词典、session）全部有 **JUnit 单元测试**，可在 host JVM 跑：

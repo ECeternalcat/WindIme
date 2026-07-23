@@ -5,12 +5,7 @@ import android.content.Context;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -26,10 +21,19 @@ import java.util.Map;
  * process-wide singleton so the IME service and the settings activity share
  * one view (same process). Implements {@link UserWordSource} so pinyin engines
  * can prepend user words to their candidate lists.
+ *
+ * <p>Persistence is atomic (temp file + rename) and corruption-aware: a damaged
+ * file is moved aside to {@code user_dict.json.corrupt} for manual recovery and
+ * the store starts empty rather than being overwritten (improvement doc §5).
  */
 public final class UserDictionary implements UserWordSource {
 
     public static final String FILE_NAME = "user_dict.json";
+    public static final String EXPORT_FILE_NAME = "WindIme_user_dict.json";
+    public static final int PINYIN_MAX = 64;
+    public static final int WORD_MAX = 64;
+    /** Maximum total entries to prevent unbounded memory growth. */
+    public static final int MAX_ENTRIES = 5000;
 
     public static final class Entry {
         public final String pinyin;
@@ -77,19 +81,37 @@ public final class UserDictionary implements UserWordSource {
         return out;
     }
 
-    public synchronized void add(String pinyin, String word) {
-        if (isBlank(pinyin) || isBlank(word)) {
-            return;
+    public synchronized StoreResult add(String pinyin, String word) {
+        StoreResult r = addInternal(pinyin, word);
+        if (r != StoreResult.OK) {
+            return r;
         }
-        String key = normalize(pinyin);
+        return persist() ? StoreResult.OK : StoreResult.IO_ERROR;
+    }
+
+    private StoreResult addInternal(String pinyin, String word) {
+        if (isBlank(pinyin) || isBlank(word)) {
+            return StoreResult.EMPTY;
+        }
+        String p = pinyin.trim();
+        String w = word.trim();
+        if (p.length() > PINYIN_MAX || w.length() > WORD_MAX) {
+            return StoreResult.TOO_LONG;
+        }
+        if (size() >= MAX_ENTRIES) {
+            return StoreResult.TOO_MANY;
+        }
+        String key = normalize(p);
         LinkedHashSet<String> set = map.get(key);
+        if (set != null && set.contains(w)) {
+            return StoreResult.DUPLICATE;
+        }
         if (set == null) {
             set = new LinkedHashSet<>();
             map.put(key, set);
         }
-        if (set.add(word.trim())) {
-            persist();
-        }
+        set.add(w);
+        return StoreResult.OK;
     }
 
     public synchronized boolean remove(String pinyin, String word) {
@@ -130,13 +152,56 @@ public final class UserDictionary implements UserWordSource {
         persist();
     }
 
+    /**
+     * Append entries from {@code src} (same JSON format as the store), merging
+     * with validation and de-duplication.
+     *
+     * @return number of newly added entries, or {@code -1} on parse failure.
+     */
+    public synchronized int importFrom(File src) {
+        if (src == null || !src.exists()) {
+            return -1;
+        }
+        JSONArray arr;
+        try {
+            arr = new JSONArray(AtomicStore.readUtf8(src, AtomicStore.MAX_IMPORT_BYTES));
+        } catch (Exception e) {
+            return -1;
+        }
+        int added = 0;
+        boolean changed = false;
+        for (int i = 0; i < arr.length(); i++) {
+            try {
+                JSONObject o = arr.getJSONObject(i);
+                if (addInternal(o.optString("pinyin", ""), o.optString("word", "")) == StoreResult.OK) {
+                    added++;
+                    changed = true;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (changed && !persist()) {
+            return -1;
+        }
+        return added;
+    }
+
+    /** Write the current entries to {@code dest} using the store's JSON format. */
+    public synchronized boolean exportTo(File dest) {
+        try {
+            AtomicStore.writeAtomic(dest, toJson().toString().getBytes("UTF-8"));
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private void load() {
         if (!file.exists()) {
             return;
         }
         try {
-            String json = readUtf8(new FileInputStream(file));
-            JSONArray arr = new JSONArray(json);
+            JSONArray arr = new JSONArray(AtomicStore.readUtf8(file));
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject o = arr.getJSONObject(i);
                 String p = o.optString("pinyin", "");
@@ -145,11 +210,24 @@ public final class UserDictionary implements UserWordSource {
                     map.computeIfAbsent(normalize(p), k -> new LinkedHashSet<String>()).add(w);
                 }
             }
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            // Corrupt JSON: discard any partial state, preserve the original
+            // aside for manual recovery, and start from an empty store.
+            map.clear();
+            AtomicStore.backupCorrupt(file);
         }
     }
 
-    private void persist() {
+    private boolean persist() {
+        try {
+            AtomicStore.writeAtomic(file, toJson().toString().getBytes("UTF-8"));
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private JSONArray toJson() {
         JSONArray arr = new JSONArray();
         for (Map.Entry<String, LinkedHashSet<String>> e : map.entrySet()) {
             for (String w : e.getValue()) {
@@ -162,15 +240,7 @@ public final class UserDictionary implements UserWordSource {
                 }
             }
         }
-        try {
-            FileOutputStream out = new FileOutputStream(file);
-            try {
-                out.write(arr.toString().getBytes("UTF-8"));
-            } finally {
-                out.close();
-            }
-        } catch (IOException ignored) {
-        }
+        return arr;
     }
 
     private static String normalize(String s) {
@@ -179,16 +249,5 @@ public final class UserDictionary implements UserWordSource {
 
     private static boolean isBlank(String s) {
         return s == null || s.trim().isEmpty();
-    }
-
-    private static String readUtf8(InputStream in) throws IOException {
-        ByteArrayOutputStream buf = new ByteArrayOutputStream();
-        byte[] tmp = new byte[4096];
-        int n;
-        while ((n = in.read(tmp)) > 0) {
-            buf.write(tmp, 0, n);
-        }
-        in.close();
-        return buf.toString("UTF-8");
     }
 }
