@@ -2,16 +2,11 @@ package com.garaho.ime.settings;
 
 import com.garaho.ime.R;
 
-import android.content.ComponentName;
 import android.content.Intent;
 import android.provider.Settings;
-import android.view.InputDevice;
 import android.view.View;
 import android.widget.AdapterView;
-import android.view.inputmethod.InputMethodInfo;
 import android.view.inputmethod.InputMethodManager;
-
-import java.util.List;
 
 /**
  * Classic IME enable + switch flow (design doc §1.2 target-environment onboarding).
@@ -33,8 +28,8 @@ public class ImeSetupActivity extends BaseMenuActivity {
     }
 
     private void rebuild() {
-        boolean enabled = isImeEnabled();
-        boolean active = isImeActive();
+        boolean enabled = ImeStatus.isEnabled(this);
+        boolean active = ImeStatus.isActive(this);
         String done = getString(R.string.ime_setup_done);
         String pending = getString(R.string.ime_setup_pending);
         String[] items = new String[] {
@@ -64,33 +59,6 @@ public class ImeSetupActivity extends BaseMenuActivity {
                 }
             }
         });
-    }
-
-    private String imeId() {
-        return new ComponentName(getPackageName(), "com.garaho.ime.GarahoImeService").flattenToShortString();
-    }
-
-    private boolean isImeEnabled() {
-        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-        if (imm == null) {
-            return false;
-        }
-        String id = imeId();
-        for (InputMethodInfo imi : imm.getEnabledInputMethodList()) {
-            if (id.equals(imi.getId())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean isImeActive() {
-        try {
-            String current = Settings.Secure.getString(getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
-            return imeId().equals(current);
-        } catch (Exception ignored) {
-            return false;
-        }
     }
 
     @Override

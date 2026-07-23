@@ -21,12 +21,12 @@ import java.util.List;
  * <p>Deterministic and side-effect-free so it can be unit tested on the host
  * JVM with no Android dependencies.
  */
-public final class T9PinyinEngine implements ImeEngine {
+public final class T9PinyinEngine implements ImeEngine, LayeredPinyinEngine {
 
     private static final int MAX_CANDIDATES = 12;
     private static final int MAX_BUFFER_DIGITS = 16;
 
-    private final StringBuilder buffer = new StringBuilder();
+    private final PinyinSession session = new PinyinSession();
     private EngineListener listener;
     private List<String> candidates = Collections.emptyList();
     private String composing = "";
@@ -46,20 +46,19 @@ public final class T9PinyinEngine implements ImeEngine {
         if (digit < 2 || digit > 9) {
             return false;
         }
-        if (buffer.length() >= MAX_BUFFER_DIGITS) {
+        if (session.getDigits().length() >= MAX_BUFFER_DIGITS) {
             return false;
         }
-        buffer.append((char) ('0' + digit));
+        session.processDigit(digit);
         recompute();
         return true;
     }
 
     @Override
     public boolean backspace() {
-        if (buffer.length() == 0) {
+        if (!session.backspace()) {
             return false;
         }
-        buffer.deleteCharAt(buffer.length() - 1);
         recompute();
         return true;
     }
@@ -70,7 +69,7 @@ public final class T9PinyinEngine implements ImeEngine {
             return false;
         }
         String word = candidates.get(index);
-        buffer.setLength(0);
+        session.reset();
         candidates = Collections.emptyList();
         composing = "";
         fire(word);
@@ -79,10 +78,10 @@ public final class T9PinyinEngine implements ImeEngine {
 
     @Override
     public void reset() {
-        if (buffer.length() == 0 && candidates.isEmpty() && composing.isEmpty()) {
+        if (session.isEmpty() && candidates.isEmpty() && composing.isEmpty()) {
             return;
         }
-        buffer.setLength(0);
+        session.reset();
         candidates = Collections.emptyList();
         composing = "";
         fire(null);
@@ -102,16 +101,43 @@ public final class T9PinyinEngine implements ImeEngine {
     }
 
     public String getBuffer() {
-        return buffer.toString();
+        return session.getDigits();
     }
 
     private void recompute() {
-        List<List<String>> segmentations = T9Segmenter.segment(buffer.toString());
-        List<String> base = buildCandidates(segmentations);
-        String phrase = T9Segmenter.bestPhraseKey(segmentations);
+        String phrase = session.getPhraseKey();
+        List<String> base = buildCandidates(phrase);
         candidates = com.garaho.ime.user.UserWordSource.merge(phrase, base, userWords);
-        composing = phrase;
+        composing = session.getComposing();
         fire(null);
+    }
+
+    @Override
+    public List<String> getPinyinOptions() {
+        return session.getOptions();
+    }
+
+    @Override
+    public int getSelectedPinyinIndex() {
+        return session.getSelectedIndex();
+    }
+
+    @Override
+    public boolean previewPinyinOption(int index) {
+        if (!session.preview(index)) {
+            return false;
+        }
+        recompute();
+        return true;
+    }
+
+    @Override
+    public boolean confirmPinyinOption(int index) {
+        if (!session.confirm(index)) {
+            return false;
+        }
+        recompute();
+        return true;
     }
 
     private void fire(String committed) {
@@ -125,26 +151,20 @@ public final class T9PinyinEngine implements ImeEngine {
         listener.onCandidatesChanged(candidates);
     }
 
-    private static List<String> buildCandidates(List<List<String>> segmentations) {
-        if (segmentations.isEmpty()) {
+    private static List<String> buildCandidates(String phraseKey) {
+        if (phraseKey == null || phraseKey.isEmpty()) {
             return Collections.emptyList();
         }
-        List<List<String>> sorted = new ArrayList<>(segmentations);
-        Collections.sort(sorted, T9Segmenter.phraseHitComparator());
-
         LinkedHashSet<String> out = new LinkedHashSet<>();
-        for (List<String> seg : sorted) {
-            String key = T9Segmenter.joinKey(seg);
-            for (String word : PinyinDictionary.lookup(key)) {
-                out.add(word);
-                if (out.size() >= MAX_CANDIDATES) {
-                    return new ArrayList<>(out);
-                }
+        for (String word : PinyinDictionary.lookup(phraseKey)) {
+            out.add(word);
+            if (out.size() >= MAX_CANDIDATES) {
+                return new ArrayList<>(out);
             }
         }
-        List<String> leadSeg = sorted.get(0);
-        if (!leadSeg.isEmpty()) {
-            for (String word : PinyinDictionary.lookup(leadSeg.get(0))) {
+        int separator = phraseKey.indexOf('\'');
+        if (separator > 0) {
+            for (String word : PinyinDictionary.lookup(phraseKey.substring(0, separator))) {
                 out.add(word);
                 if (out.size() >= MAX_CANDIDATES) {
                     break;

@@ -6,12 +6,16 @@ android {
     namespace 'com.garaho.ime'
     compileSdk 34
 
+    buildFeatures {
+        buildConfig true
+    }
+
     defaultConfig {
         applicationId "com.garaho.ime"
         minSdk 21
         targetSdk 28
-        versionCode 16
-        versionName "0.4.4"
+        versionCode 17
+        versionName "0.5.0"
 
         // Direct boot aware for FDE/FBE devices (doc 5.1)
         // Declared in manifest via android:directBootAware="true"

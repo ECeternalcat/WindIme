@@ -1,0 +1,13 @@
+# WindIme dictionary entry point for the rime-ice Chinese vocabulary.
+# Upstream: https://github.com/iDvel/rime-ice
+# Snapshot: local 2026-07 cleaned data; see RIME_ICE_SOURCE.md.
+---
+name: rime_ice
+version: "2026-06-windime"
+sort: by_weight
+import_tables:
+  - cn_dicts/8105
+  - cn_dicts/base
+  - cn_dicts/ext
+  - cn_dicts/others
+...

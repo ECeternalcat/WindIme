@@ -1,0 +1,10 @@
+# WindIme English dictionary entry point for the optional Rime English schema.
+# Upstream: https://github.com/iDvel/rime-ice
+---
+name: rime_ice_en
+version: "2026-07-windime"
+sort: by_weight
+import_tables:
+  - en_dicts/en
+  - en_dicts/en_ext
+...

@@ -37,6 +37,7 @@ public class SetupWizardActivity extends Activity {
     };
 
     private TextView promptView;
+    private TextView tipView;
     private TextView statusView;
     private int currentStep = 0;
     private final Map<InputAction, KeyMapConfig.Mapping> captured = new LinkedHashMap<>();
@@ -48,6 +49,7 @@ public class SetupWizardActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_setup_wizard);
         promptView = findViewById(R.id.wizard_prompt);
+        tipView = findViewById(R.id.wizard_tip);
         statusView = findViewById(R.id.wizard_status);
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
         keyMapper = new KeyMapper(this);
@@ -78,6 +80,12 @@ public class SetupWizardActivity extends Activity {
         }
         InputAction a = STEPS[currentStep];
         promptView.setText(getString(R.string.wizard_press_action_prompt, displayName(a)));
+        if (a == InputAction.BACKSPACE_DELETE) {
+            tipView.setText(R.string.wizard_back_as_delete_tip);
+            tipView.setVisibility(android.view.View.VISIBLE);
+        } else {
+            tipView.setVisibility(android.view.View.GONE);
+        }
         StringBuilder sb = new StringBuilder();
         sb.append(getString(R.string.wizard_step_format, currentStep + 1, STEPS.length)).append('\n');
         for (Map.Entry<InputAction, KeyMapConfig.Mapping> e : captured.entrySet()) {

@@ -6,18 +6,22 @@ import com.garaho.ime.engine.EnglishMultiTapEngine;
 import com.garaho.ime.engine.EnglishT9Engine;
 import com.garaho.ime.engine.ImeEngine;
 import com.garaho.ime.engine.InputMode;
+import com.garaho.ime.engine.LayeredPinyinEngine;
 import com.garaho.ime.engine.MultiTapSupport;
 import com.garaho.ime.engine.RimeEngine;
 import com.garaho.ime.engine.T9PinyinEngine;
 import com.garaho.ime.keymap.InputAction;
 import com.garaho.ime.keymap.KeyMapper;
 import com.garaho.ime.rime.RimeData;
+import com.garaho.ime.rime.RimeMaintenance;
+import com.garaho.ime.rime.RimeRuntimeStatus;
 import com.garaho.ime.settings.GarahoPrefs;
 import com.garaho.ime.ui.CandidateBar;
 import com.garaho.ime.ui.SymbolPanel;
 
 import android.inputmethodservice.InputMethodService;
-import android.os.SystemClock;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
@@ -46,9 +50,13 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     private static final String TAG = "GarahoIme";
     private static final long RESET_COMBO_WINDOW_MS = 5000;
+    private static final long RIME_DEPLOY_TIMEOUT_MS = 30 * 60 * 1000L;
 
     private KeyMapper keyMapper;
     private ImeEngine pinyinEngine;
+    private volatile RimeEngine pendingRimeEngine;
+    private volatile boolean destroyed;
+    private volatile Thread rimeInitThread;
     private EnglishT9Engine englishEngine;
     private ChineseMultiTapEngine zhMultiTapEngine;
     private EnglishMultiTapEngine enMultiTapEngine;
@@ -59,32 +67,37 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private FrameLayout rootContainer;
 
     private boolean showModeBar = true;
+    private boolean inputSessionActive;
+    private boolean inputViewActive;
     private String[] barLabels = null;
     private InputMode[] barModes = null;
     private int modeBarIndex = 0;
     private CharSequence currentComposing = "";
 
-    private long backspaceDownAt;
-    private long poundDownAt;
+    private boolean backspaceHeld;
+    private boolean poundHeld;
+    private boolean consumeBoundBackKeyUp;
+    private final Handler resetComboHandler = new Handler(Looper.getMainLooper());
+    private final Runnable resetComboRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (backspaceHeld && poundHeld) {
+                checkSafeEscapeCombo();
+            }
+        }
+    };
 
     @Override
     public void onCreate() {
         super.onCreate();
         keyMapper = new KeyMapper(this);
 
-        RimeData rimeData = new RimeData(this);
-        rimeData.ensureExtracted(this);
-
-        RimeEngine rimeEngine = RimeEngine.tryCreate(
-                rimeData.getSharedDir(), rimeData.getUserDir(), "0.2.1");
-        if (rimeEngine != null) {
-            pinyinEngine = rimeEngine;
-            Log.i(TAG, "Pinyin engine: native librime (RimeEngine)");
-        } else {
-            pinyinEngine = new T9PinyinEngine();
-            Log.i(TAG, "Pinyin engine: built-in T9PinyinEngine");
-        }
+        // Keep the IME immediately usable while the large rime-ice source
+        // dictionaries are extracted and compiled on a background thread.
+        pinyinEngine = new T9PinyinEngine();
+        Log.i(TAG, "Pinyin engine: built-in T9PinyinEngine (Rime preparing in background)");
         pinyinEngine.setListener(this);
+        setRimeStatus(RimeRuntimeStatus.State.PREPARING, "正在准备雾凇词库");
 
         englishEngine = new EnglishT9Engine();
         englishEngine.setListener(this);
@@ -96,12 +109,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         enMultiTapEngine.setListener(this);
 
         com.garaho.ime.user.UserDictionary userDict = com.garaho.ime.user.UserDictionary.get(this);
-        if (pinyinEngine instanceof com.garaho.ime.engine.T9PinyinEngine) {
-            ((com.garaho.ime.engine.T9PinyinEngine) pinyinEngine).setUserWordSource(userDict);
-        } else if (pinyinEngine instanceof com.garaho.ime.engine.RimeEngine) {
-            ((com.garaho.ime.engine.RimeEngine) pinyinEngine).setUserWordSource(userDict);
-        }
+        ((T9PinyinEngine) pinyinEngine).setUserWordSource(userDict);
         zhMultiTapEngine.setUserWordSource(userDict);
+        prepareRimeInBackground(userDict);
     }
 
     @Override
@@ -122,14 +132,163 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT));
         candidateBar.setModeLabel(indicatorLabel());
+        updateBackendStatus();
         enterModeBar();
         return rootContainer;
     }
 
     @Override
+    public void onStartInput(android.view.inputmethod.EditorInfo attribute, boolean restarting) {
+        super.onStartInput(attribute, restarting);
+        keyMapper.reload();
+        inputSessionActive = true;
+        inputViewActive = false;
+        showModeBar = true;
+        Log.d(TAG, "onStartInput restarting=" + restarting);
+    }
+
+    @Override
     public void onStartInputView(android.view.inputmethod.EditorInfo info, boolean restarting) {
         super.onStartInputView(info, restarting);
+        inputSessionActive = true;
+        inputViewActive = true;
+        adoptReadyRimeEngine();
         enterModeBar();
+        Log.d(TAG, "onStartInputView restarting=" + restarting);
+    }
+
+    @Override
+    public void onFinishInputView(boolean finishingInput) {
+        inputViewActive = false;
+        Log.d(TAG, "onFinishInputView finishingInput=" + finishingInput);
+        super.onFinishInputView(finishingInput);
+    }
+
+    @Override
+    public void onFinishInput() {
+        inputViewActive = false;
+        inputSessionActive = false;
+        showModeBar = true;
+        if (symbolPanel != null && symbolPanel.isShowing()) {
+            symbolPanel.dismiss();
+        }
+        currentComposing = "";
+        ImeEngine active = activeEngine();
+        if (active != null) {
+            active.reset();
+        }
+        Log.d(TAG, "onFinishInput");
+        super.onFinishInput();
+    }
+
+    private void prepareRimeInBackground(final com.garaho.ime.user.UserWordSource userDict) {
+        Thread thread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                RimeData data = new RimeData(GarahoImeService.this);
+                if (RimeMaintenance.hasPending(GarahoImeService.this)
+                        && RimeEngine.hasStartedInProcess()) {
+                    setRimeStatus(RimeRuntimeStatus.State.PREPARING, "维护待进程重启执行");
+                    Log.w(TAG, "Rime maintenance deferred until a fresh process starts");
+                    return;
+                }
+                if (!RimeMaintenance.applyPending(GarahoImeService.this,
+                        data.getSharedDir(), data.getUserDir())) {
+                    setRimeStatus(RimeRuntimeStatus.State.FAILED, "维护操作失败");
+                    return;
+                }
+                if (!data.ensureExtracted(GarahoImeService.this) || destroyed) {
+                    Log.w(TAG, "rime-ice data unavailable; keeping Java T9 fallback");
+                    if (!destroyed) {
+                        setRimeStatus(RimeRuntimeStatus.State.FAILED, "词库解包失败");
+                    }
+                    return;
+                }
+                RimeEngine engine = RimeEngine.tryCreate(
+                        data.getSharedDir(), data.getUserDir(), BuildConfig.VERSION_NAME);
+                if (engine == null) {
+                    setRimeStatus(RimeRuntimeStatus.State.FAILED, "native Rime 不可用");
+                    Log.w(TAG, "rime-ice unavailable; keeping Java T9 fallback");
+                    return;
+                }
+                if (!engine.awaitSchema("rime_ice", RIME_DEPLOY_TIMEOUT_MS)) {
+                    if (!destroyed) {
+                        setRimeStatus(RimeRuntimeStatus.State.FAILED, "schema 部署超时");
+                    }
+                    Log.w(TAG, "rime-ice unavailable; keeping Java T9 fallback");
+                    return;
+                }
+                engine.setUserWordSource(userDict);
+                engine.setListener(GarahoImeService.this);
+                if (destroyed) {
+                    return;
+                }
+                pendingRimeEngine = engine;
+                setRimeStatus(RimeRuntimeStatus.State.PREPARING, "已就绪，下次输入启用");
+                Log.i(TAG, "rime-ice ready; it will activate for the next input field");
+            }
+        }, "WindIme-RimeInit");
+        rimeInitThread = thread;
+        thread.start();
+    }
+
+    @Override
+    public void onDestroy() {
+        destroyed = true;
+        pendingRimeEngine = null;
+        resetComboHandler.removeCallbacks(resetComboRunnable);
+        Thread thread = rimeInitThread;
+        if (thread != null) {
+            thread.interrupt();
+        }
+        super.onDestroy();
+    }
+
+    /** Swap engines only between input sessions so an in-progress word is never lost. */
+    private void adoptReadyRimeEngine() {
+        RimeEngine ready = pendingRimeEngine;
+        if (ready == null) {
+            return;
+        }
+        pendingRimeEngine = null;
+        if (pinyinEngine != null) {
+            pinyinEngine.reset();
+        }
+        pinyinEngine = ready;
+        setRimeStatus(RimeRuntimeStatus.State.READY, "雾凇词库已启用");
+        Log.i(TAG, "Pinyin engine -> native rime-ice");
+    }
+
+    private void setRimeStatus(final RimeRuntimeStatus.State state, String detail) {
+        RimeRuntimeStatus.set(this, state, detail);
+        resetComboHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                updateBackendStatus();
+            }
+        });
+    }
+
+    private void updateBackendStatus() {
+        if (candidateBar == null) {
+            return;
+        }
+        RimeRuntimeStatus.State state = RimeRuntimeStatus.get(this).state;
+        switch (state) {
+            case PREPARING:
+                candidateBar.setBackendStatus(getString(R.string.rime_status_preparing_short));
+                break;
+            case READY:
+                candidateBar.setBackendStatus(getString(R.string.rime_status_ready_short));
+                break;
+            case FAILED:
+                candidateBar.setBackendStatus(getString(R.string.rime_status_failed_short));
+                break;
+            case LIGHTWEIGHT:
+            default:
+                candidateBar.setBackendStatus(getString(R.string.rime_status_lightweight_short));
+                break;
+        }
     }
 
     /** Mode label for the candidate strip, empty when the user hides the indicator. */
@@ -157,12 +316,31 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        // InputMethodService can receive a late hardware event after the input
+        // view was hidden. Never resolve or consume it outside an active input
+        // view, otherwise ENTER/DPAD keys can appear dead in the host UI.
+        if (!InputEventGate.accepts(inputSessionActive, inputViewActive)) {
+            return false;
+        }
         // Symbol/phrase panel is modal: while open, route every key to it.
         if (symbolPanel != null && symbolPanel.isShowing()) {
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
                 symbolPanel.handleKey(keyCode);
             }
             return true;
+        }
+        InputAction action = keyMapper.resolve(keyCode, event.getScanCode());
+        if (action != InputAction.NONE) {
+            Log.d(TAG, "onKeyDown keyCode=" + keyCode + " scan=" + event.getScanCode() + " -> " + action + " (mode=" + mode + ")");
+        }
+        // Some Japanese flip phones share BACK and backspace. Respect an
+        // explicit user mapping: delete composition/editor text first, then
+        // hide the IME when there is nothing left to delete. Once hidden, the
+        // lifecycle gate releases the next BACK press to the host system.
+        if (keyCode == KeyEvent.KEYCODE_BACK && action == InputAction.BACKSPACE_DELETE) {
+            consumeBoundBackKeyUp = true;
+            trackResetComboDown(action, event);
+            return handleBoundBackKey();
         }
         // Two-stage BACK (doc §1 / iWnn quick-select): while composing, first
         // BACK cancels composing and returns to the mode bar; a second BACK
@@ -174,31 +352,55 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             }
             return false;
         }
-        InputAction action = keyMapper.resolve(keyCode, event.getScanCode());
-        if (action != InputAction.NONE) {
-            Log.d(TAG, "onKeyDown keyCode=" + keyCode + " scan=" + event.getScanCode() + " -> " + action + " (mode=" + mode + ")");
-        }
         if (action == InputAction.BACKSPACE_DELETE) {
-            backspaceDownAt = event.getEventTime();
-            if (poundDownAt != 0 && SystemClock.uptimeMillis() - poundDownAt < 50) {
-                checkSafeEscapeCombo();
-            }
+            trackResetComboDown(action, event);
         } else if (action == InputAction.INPUT_KEY_POUND) {
-            poundDownAt = event.getEventTime();
+            trackResetComboDown(action, event);
         }
         return handleAction(action) || super.onKeyDown(keyCode, event);
     }
 
     @Override
-    public boolean onKeyLongPress(int keyCode, KeyEvent event) {
-        InputAction action = keyMapper.resolve(keyCode, event.getScanCode());
-        if (action == InputAction.BACKSPACE_DELETE) {
-            if (SystemClock.uptimeMillis() - backspaceDownAt >= RESET_COMBO_WINDOW_MS) {
-                checkSafeEscapeCombo();
-                return true;
-            }
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_BACK && consumeBoundBackKeyUp) {
+            consumeBoundBackKeyUp = false;
+            trackResetComboUp(InputAction.BACKSPACE_DELETE);
+            return true;
         }
+        InputAction action = keyMapper.resolve(keyCode, event.getScanCode());
+        trackResetComboUp(action);
+        return super.onKeyUp(keyCode, event);
+    }
+
+    @Override
+    public boolean onKeyLongPress(int keyCode, KeyEvent event) {
         return super.onKeyLongPress(keyCode, event);
+    }
+
+    private void trackResetComboDown(InputAction action, KeyEvent event) {
+        if (event.getRepeatCount() != 0) {
+            return;
+        }
+        if (action == InputAction.BACKSPACE_DELETE) {
+            backspaceHeld = true;
+        } else if (action == InputAction.INPUT_KEY_POUND) {
+            poundHeld = true;
+        }
+        if (backspaceHeld && poundHeld) {
+            resetComboHandler.removeCallbacks(resetComboRunnable);
+            resetComboHandler.postDelayed(resetComboRunnable, RESET_COMBO_WINDOW_MS);
+        }
+    }
+
+    private void trackResetComboUp(InputAction action) {
+        if (action == InputAction.BACKSPACE_DELETE) {
+            backspaceHeld = false;
+        } else if (action == InputAction.INPUT_KEY_POUND) {
+            poundHeld = false;
+        }
+        if (!backspaceHeld || !poundHeld) {
+            resetComboHandler.removeCallbacks(resetComboRunnable);
+        }
     }
 
     private boolean handleAction(InputAction action) {
@@ -230,13 +432,31 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 return handleDigit(action);
 
             case NAV_LEFT:
-                return candidateBar != null && candidateBar.moveFocus(-1);
+                return moveLayerFocus(-1);
             case NAV_RIGHT:
-                return candidateBar != null && candidateBar.moveFocus(1);
+                return moveLayerFocus(1);
             case NAV_UP:
-                return candidateBar != null && candidateBar.expandGrid(false);
+                if (candidateBar != null) {
+                    ImeEngine upEngine = activeEngine();
+                    if (upEngine instanceof LayeredPinyinEngine) {
+                        candidateBar.moveLayer(false);
+                    } else {
+                        candidateBar.expandGrid(false);
+                    }
+                    return true;
+                }
+                return false;
             case NAV_DOWN:
-                return candidateBar != null && candidateBar.expandGrid(true);
+                if (candidateBar != null) {
+                    ImeEngine downEngine = activeEngine();
+                    if (downEngine instanceof LayeredPinyinEngine) {
+                        candidateBar.moveLayer(true);
+                    } else {
+                        candidateBar.expandGrid(true);
+                    }
+                    return true;
+                }
+                return false;
             case CONFIRM_SELECTION:
                 return confirmSelection();
 
@@ -316,7 +536,11 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
         ImeEngine active = activeEngine();
         if (digit >= 2 && digit <= 9) {
-            return active.processDigit(digit);
+            boolean processed = active.processDigit(digit);
+            if (processed && active instanceof LayeredPinyinEngine && candidateBar != null) {
+                candidateBar.activatePinyinLayer();
+            }
+            return processed;
         }
         if (action == InputAction.INPUT_KEY_1) {
             if (active.candidateCount() > 0) {
@@ -350,9 +574,31 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private boolean handleBackspace() {
         ImeEngine active = activeEngine();
         if (active != null && active.backspace()) {
+            if (active instanceof LayeredPinyinEngine && candidateBar != null) {
+                candidateBar.activatePinyinLayer();
+            }
             return true;
         }
         return deleteFromEditor();
+    }
+
+    private boolean handleBoundBackKey() {
+        ImeEngine active = activeEngine();
+        if (active != null && active.backspace()) {
+            if (active instanceof LayeredPinyinEngine && candidateBar != null) {
+                candidateBar.activatePinyinLayer();
+            }
+            return true;
+        }
+        boolean deleted = deleteFromEditorIfPossible();
+        if (!BoundBackKeyPolicy.shouldHideIme(deleted, editorIsKnownEmpty())) {
+            return true;
+        }
+        inputViewActive = false;
+        showModeBar = true;
+        requestHideSelf(0);
+        Log.d(TAG, "Mapped BACK found nothing to delete; hiding IME");
+        return true;
     }
 
     /** Delete one char (or the active selection) from the editor via the InputConnection. */
@@ -363,11 +609,45 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         }
         CharSequence sel = ic.getSelectedText(0);
         if (sel != null && sel.length() > 0) {
-            ic.deleteSurroundingText(0, sel.length());
+            ic.commitText("", 1);
         } else {
             ic.deleteSurroundingText(1, 0);
         }
         return true;
+    }
+
+    /** Delete only when a selection or a character before the cursor exists. */
+    private boolean deleteFromEditorIfPossible() {
+        android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
+        if (ic == null) {
+            return false;
+        }
+        CharSequence selected = ic.getSelectedText(0);
+        if (selected != null && selected.length() > 0) {
+            return ic.commitText("", 1);
+        }
+        CharSequence before = ic.getTextBeforeCursor(1, 0);
+        if (before == null || before.length() == 0) {
+            return false;
+        }
+        return ic.deleteSurroundingText(1, 0);
+    }
+
+    private boolean editorIsKnownEmpty() {
+        android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
+        if (ic == null) {
+            return false;
+        }
+        CharSequence selected = ic.getSelectedText(0);
+        if (selected != null && selected.length() > 0) {
+            return false;
+        }
+        CharSequence before = ic.getTextBeforeCursor(1, 0);
+        if (before != null && before.length() > 0) {
+            return false;
+        }
+        CharSequence after = ic.getTextAfterCursor(1, 0);
+        return before != null && after != null && after.length() == 0;
     }
 
     private boolean confirmSelection() {
@@ -378,8 +658,45 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (active == null) {
             return false;
         }
+        if (candidateBar.getActiveLayer() == CandidateBar.InputLayer.PINYIN
+                && active instanceof LayeredPinyinEngine) {
+            LayeredPinyinEngine layered = (LayeredPinyinEngine) active;
+            int index = candidateBar.getPinyinFocusIndex();
+            if (index < 0 || index >= layered.getPinyinOptions().size()) {
+                return false;
+            }
+            boolean confirmed = layered.confirmPinyinOption(index);
+            if (confirmed) {
+                candidateBar.activateCandidateLayer();
+            }
+            // Partial letter options are selectable previews but cannot lock a
+            // syllable yet. Consume OK so ENTER never leaks into the editor.
+            return true;
+        }
+        if (active instanceof LayeredPinyinEngine && active.candidateCount() == 0) {
+            return true;
+        }
         int focus = candidateBar.getFocusIndex();
         return active.selectCandidate(focus);
+    }
+
+    private boolean moveLayerFocus(int delta) {
+        if (candidateBar == null) {
+            return false;
+        }
+        ImeEngine active = activeEngine();
+        if (!candidateBar.moveFocus(delta)) {
+            // Layered navigation is modal: do not let a boundary key move the
+            // host editor cursor. Other modes retain their previous behavior.
+            return active instanceof LayeredPinyinEngine;
+        }
+        if (candidateBar.getActiveLayer() == CandidateBar.InputLayer.PINYIN
+                && active instanceof LayeredPinyinEngine) {
+            candidateBar.resetCandidateFocus();
+            return ((LayeredPinyinEngine) active)
+                    .previewPinyinOption(candidateBar.getPinyinFocusIndex());
+        }
+        return true;
     }
 
     private ImeEngine activeEngine() {
@@ -439,6 +756,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         currentComposing = "";
         if (candidateBar != null) {
             candidateBar.setCandidates(new String[0]);
+            candidateBar.setPinyinOptions(new String[0], -1);
             candidateBar.setComposingText("");
             candidateBar.showModeBar(true);
             candidateBar.setModeBar(barLabels, modeBarIndex);
@@ -537,6 +855,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (candidateBar != null) {
             candidateBar.setModeLabel(indicatorLabel());
             candidateBar.setCandidates(new String[0]);
+            candidateBar.setPinyinOptions(new String[0], -1);
             candidateBar.setComposingText("");
         }
         Log.i(TAG, "Input mode -> " + mode);
@@ -584,6 +903,15 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         Log.d(TAG, "onCandidatesChanged count=" + candidates.size());
         if (candidateBar != null) {
             candidateBar.setCandidates(candidates.toArray(new String[0]));
+            ImeEngine active = activeEngine();
+            if (active instanceof LayeredPinyinEngine) {
+                LayeredPinyinEngine layered = (LayeredPinyinEngine) active;
+                candidateBar.setPinyinOptions(
+                        layered.getPinyinOptions().toArray(new String[0]),
+                        layered.getSelectedPinyinIndex());
+            } else {
+                candidateBar.setPinyinOptions(new String[0], -1);
+            }
         }
     }
 

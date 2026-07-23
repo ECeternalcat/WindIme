@@ -1,9 +1,10 @@
-# Rime default settings (WindIme minimal preset)
+# Rime default settings (WindIme + rime-ice Chinese dictionaries)
 # config_version bumps whenever the bundled data layout changes.
-config_version: "0.1"
+config_version: "1.0"
 
 schema_list:
-  - schema: luna_pinyin
+  - schema: rime_ice
+  - schema: rime_ice_en
 
 switches:
   - name: ascii_mode

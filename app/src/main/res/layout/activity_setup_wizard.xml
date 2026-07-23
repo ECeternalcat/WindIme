@@ -15,6 +15,17 @@
         android:paddingBottom="12dp" />
 
     <TextView
+        android:id="@+id/wizard_tip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/candidate_focus"
+        android:padding="10dp"
+        android:textColor="@color/candidate_focus_text"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <TextView
         android:id="@+id/wizard_status"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

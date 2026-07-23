@@ -108,4 +108,34 @@ public class T9PinyinEngineTest {
         type(e, "744543");
         assertTrue("expected 世界 in candidates, got " + l.candidates, l.candidates.contains("世界"));
     }
+
+    @Test
+    public void pinyinPreviewRefreshesWordCandidates() {
+        CapturingListener l = new CapturingListener();
+        T9PinyinEngine e = newEngine(l);
+        type(e, "24");
+
+        assertEquals(java.util.Arrays.asList("ai", "bi", "ci", "a", "b", "c"),
+                e.getPinyinOptions());
+        assertTrue(e.previewPinyinOption(0));
+        assertEquals("ai", e.getComposing());
+        assertEquals("爱", l.candidates.get(0));
+        assertTrue(e.previewPinyinOption(2));
+        assertEquals("ci", e.getComposing());
+        assertEquals("次", l.candidates.get(0));
+    }
+
+    @Test
+    public void confirmedPinyinContinuesAsMultipleSyllables() {
+        CapturingListener l = new CapturingListener();
+        T9PinyinEngine e = newEngine(l);
+        type(e, "64");
+
+        int ni = e.getPinyinOptions().indexOf("ni");
+        assertTrue(e.confirmPinyinOption(ni));
+        type(e, "426");
+
+        assertEquals("ni'hao", e.getComposing());
+        assertEquals("你好", l.candidates.get(0));
+    }
 }

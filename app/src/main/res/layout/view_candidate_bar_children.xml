@@ -1,6 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <merge xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <TextView
+        android:id="@+id/backend_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/candidate_bg"
+        android:gravity="end"
+        android:paddingLeft="4dp"
+        android:paddingTop="1dp"
+        android:paddingRight="4dp"
+        android:paddingBottom="1dp"
+        android:singleLine="true"
+        android:textColor="@color/primary_text"
+        android:textSize="10sp" />
+
     <LinearLayout
         android:id="@+id/mode_bar"
         android:layout_width="match_parent"
@@ -19,6 +33,14 @@
         android:ellipsize="end"
         android:textSize="12sp"
         android:textColor="@color/primary_text"
+        android:background="@color/candidate_bg" />
+
+    <LinearLayout
+        android:id="@+id/pinyin_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:visibility="gone"
         android:background="@color/candidate_bg" />
 
     <LinearLayout

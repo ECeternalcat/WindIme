@@ -2,13 +2,12 @@ package com.garaho.ime.settings;
 
 import com.garaho.ime.R;
 import com.garaho.ime.keymap.KeyMapper;
+import com.garaho.ime.rime.RimeMaintenance;
 
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.view.View;
 import android.widget.AdapterView;
-
-import java.io.File;
 
 /**
  * Reset actions (design doc §2.5): restore the factory keymap and/or wipe the
@@ -38,7 +37,8 @@ public class ResetSettingsActivity extends BaseMenuActivity {
                     case 1:
                         confirm(R.string.reset_user_data_confirm, new Runnable() {
                             @Override public void run() {
-                                deleteRecursive(new File(getFilesDir(), "rime_user"));
+                                RimeMaintenance.enqueue(ResetSettingsActivity.this,
+                                        RimeMaintenance.Action.CLEAR_LEARNING);
                             }
                         });
                         break;
@@ -60,21 +60,6 @@ public class ResetSettingsActivity extends BaseMenuActivity {
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
-    }
-
-    private static void deleteRecursive(File file) {
-        if (file == null || !file.exists()) {
-            return;
-        }
-        if (file.isDirectory()) {
-            File[] children = file.listFiles();
-            if (children != null) {
-                for (File c : children) {
-                    deleteRecursive(c);
-                }
-            }
-        }
-        file.delete();
     }
 
     @Override

@@ -27,7 +27,7 @@ public final class RimeData {
     private static final String SHARED_DIR_NAME = "rime";
     private static final String USER_DIR_NAME = "rime_user";
     private static final String VERSION_MARKER = ".data_version";
-    private static final String DATA_VERSION = "2";
+    public static final String DATA_VERSION = "4-rime-ice-clean-2026-07";
 
     private final File sharedDir;
     private final File userDir;
@@ -47,22 +47,28 @@ public final class RimeData {
     }
 
     /** Ensure shared/user dirs exist and the shared preset is up to date. */
-    public void ensureExtracted(Context context) {
+    public boolean ensureExtracted(Context context) {
         if (!userDir.exists()) userDir.mkdirs();
         if (!sharedDir.exists() && !sharedDir.mkdirs()) {
             Log.w(TAG, "Could not create shared dir " + sharedDir);
-            return;
+            return false;
         }
         if (isUpToDate()) {
-            return;
+            return true;
         }
         AssetManager am = context.getAssets();
         try {
+            // The shared directory contains bundled, reproducible data only.
+            // Clear stale schemas (for example the old luna_pinyin starter)
+            // before installing a new snapshot; user learning lives separately.
+            deleteContents(sharedDir);
             copyAssets(am, ASSET_ROOT, sharedDir);
             writeMarker();
             Log.i(TAG, "Rime data extracted to " + sharedDir);
+            return true;
         } catch (IOException e) {
             Log.e(TAG, "Failed extracting rime data", e);
+            return false;
         }
     }
 
@@ -74,7 +80,7 @@ public final class RimeData {
         try {
             InputStream in = new java.io.FileInputStream(marker);
             try {
-                byte[] buf = new byte[16];
+                byte[] buf = new byte[64];
                 int n = in.read(buf);
                 String s = new String(buf, 0, Math.max(0, n), "UTF-8").trim();
                 return DATA_VERSION.equals(s);
@@ -138,6 +144,30 @@ public final class RimeData {
             }
         } finally {
             in.close();
+        }
+    }
+
+    private static void deleteContents(File dir) throws IOException {
+        File[] children = dir.listFiles();
+        if (children == null) {
+            return;
+        }
+        for (File child : children) {
+            deleteRecursive(child);
+        }
+    }
+
+    private static void deleteRecursive(File file) throws IOException {
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursive(child);
+                }
+            }
+        }
+        if (!file.delete()) {
+            throw new IOException("Cannot delete stale Rime data " + file);
         }
     }
 }

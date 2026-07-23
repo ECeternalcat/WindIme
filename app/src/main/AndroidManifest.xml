@@ -29,7 +29,15 @@
             android:name=".ui.SettingsActivity"
             android:exported="true"
             android:label="@string/title_settings"
-            android:launchMode="singleTask">
+            android:launchMode="singleTask" />
+
+        <activity
+            android:name=".ui.LauncherActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="@string/app_name"
+            android:taskAffinity="com.garaho.ime.launcher"
+            android:theme="@style/GarahoLauncherTheme">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -62,6 +70,10 @@
             android:name=".settings.ResetSettingsActivity"
             android:exported="false"
             android:label="@string/settings_reset" />
+        <activity
+            android:name=".settings.RimeSettingsActivity"
+            android:exported="false"
+            android:label="@string/settings_rime" />
         <activity
             android:name=".settings.UserDictActivity"
             android:exported="false"

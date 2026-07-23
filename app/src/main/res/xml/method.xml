@@ -4,6 +4,7 @@
     Doc 1.2: targets Chinese (T9 pinyin) and English (T9 ASCII) modes.
 -->
 <input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="com.garaho.ime.ui.SettingsActivity"
     android:supportsSwitchingToNextInputMethod="true"
     android:supportsInlineSuggestions="false">
 

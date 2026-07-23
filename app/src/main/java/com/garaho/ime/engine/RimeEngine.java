@@ -26,12 +26,13 @@ import java.util.List;
  * {@link #isAvailable()} is true; otherwise it falls back to
  * {@link T9PinyinEngine}.
  */
-public final class RimeEngine implements ImeEngine {
+public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
 
     private static final String TAG = "RimeEngine";
     private static final int FETCH_LIMIT = 12;
+    private static volatile boolean startedInProcess;
 
-    private final StringBuilder digits = new StringBuilder();
+    private final PinyinSession session = new PinyinSession();
     private EngineListener listener;
     private List<String> candidates = Collections.emptyList();
     private String composing = "";
@@ -71,12 +72,44 @@ public final class RimeEngine implements ImeEngine {
             // here - it reliably returns ".default" before the work thread
             // finishes even though deployment will succeed shortly after.
             Rime.startupRime(sharedDir.getAbsolutePath(), userDir.getAbsolutePath(), version, false);
+            startedInProcess = true;
             Log.i(TAG, "Rime started; schema deploys asynchronously on work thread");
             return new RimeEngine();
         } catch (Throwable t) {
             Log.e(TAG, "Rime startup failed", t);
             return null;
         }
+    }
+
+    public static boolean hasStartedInProcess() {
+        return startedInProcess;
+    }
+
+    /**
+     * Wait for asynchronous schema deployment and select the requested schema.
+     * Intended for the background initialization thread, never the IME thread.
+     */
+    public boolean awaitSchema(String schemaId, long timeoutMs) {
+        long deadline = android.os.SystemClock.uptimeMillis() + Math.max(0, timeoutMs);
+        do {
+            try {
+                String current = Rime.getCurrentRimeSchema();
+                if (schemaId.equals(current) || Rime.selectRimeSchema(schemaId)) {
+                    Log.i(TAG, "Rime schema ready: " + schemaId);
+                    return true;
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "Schema readiness probe failed: " + t);
+            }
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        } while (android.os.SystemClock.uptimeMillis() < deadline);
+        Log.e(TAG, "Timed out waiting for Rime schema " + schemaId);
+        return false;
     }
 
     @Override
@@ -92,7 +125,7 @@ public final class RimeEngine implements ImeEngine {
         if (digit < 2 || digit > 9) {
             return false;
         }
-        digits.append((char) ('0' + digit));
+        session.processDigit(digit);
         pushPhraseToRime();
         return true;
     }
@@ -102,12 +135,11 @@ public final class RimeEngine implements ImeEngine {
         if (!isAvailable()) {
             return false;
         }
-        if (digits.length() == 0) {
+        if (!session.backspace()) {
             // Nothing composing: hand the backspace back to the host so it can
             // delete already-committed text via the InputConnection.
             return false;
         }
-        digits.deleteCharAt(digits.length() - 1);
         pushPhraseToRime();
         return true;
     }
@@ -117,10 +149,18 @@ public final class RimeEngine implements ImeEngine {
         if (!isAvailable() || index < 0) {
             return false;
         }
-        String chosen = fetchCandidateText(index);
+        if (index >= candidates.size()) {
+            return false;
+        }
+        String chosen = candidates.get(index);
+        int nativeIndex = nativeCandidates.indexOf(chosen);
+        if (nativeIndex < 0) {
+            clearAfterCommit(chosen);
+            return true;
+        }
         boolean ok = false;
         try {
-            ok = Rime.selectRimeCandidate(index, true);
+            ok = Rime.selectRimeCandidate(nativeIndex, true);
         } catch (Throwable t) {
             Log.w(TAG, "selectRimeCandidate failed: " + t);
         }
@@ -135,27 +175,8 @@ public final class RimeEngine implements ImeEngine {
         String text = (commit != null && commit.text != null && !commit.text.isEmpty())
                 ? commit.text
                 : (chosen != null ? chosen : "");
-        digits.setLength(0);
-        composing = "";
-        candidates = Collections.emptyList();
-        if (listener != null) {
-            listener.onCommit(text);
-            listener.onComposingChanged(composing);
-            listener.onCandidatesChanged(candidates);
-        }
+        clearAfterCommit(text);
         return true;
-    }
-
-    private static String fetchCandidateText(int index) {
-        try {
-            CandidateProto[] arr = Rime.getRimeCandidates(index, 1);
-            if (arr != null && arr.length > 0 && arr[0] != null) {
-                return arr[0].text;
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "getRimeCandidates(index) failed: " + t);
-        }
-        return null;
     }
 
     @Override
@@ -163,9 +184,10 @@ public final class RimeEngine implements ImeEngine {
         if (!isAvailable()) {
             return;
         }
-        digits.setLength(0);
+        session.reset();
         composing = "";
         candidates = Collections.emptyList();
+        nativeCandidates = Collections.emptyList();
         Rime.clearRimeComposition();
         if (listener != null) {
             listener.onComposingChanged(composing);
@@ -186,6 +208,34 @@ public final class RimeEngine implements ImeEngine {
         return composing;
     }
 
+    @Override
+    public List<String> getPinyinOptions() {
+        return session.getOptions();
+    }
+
+    @Override
+    public int getSelectedPinyinIndex() {
+        return session.getSelectedIndex();
+    }
+
+    @Override
+    public boolean previewPinyinOption(int index) {
+        if (!session.preview(index)) {
+            return false;
+        }
+        pushPhraseToRime();
+        return true;
+    }
+
+    @Override
+    public boolean confirmPinyinOption(int index) {
+        if (!session.confirm(index)) {
+            return false;
+        }
+        pushPhraseToRime();
+        return true;
+    }
+
     /**
      * Re-segment the digit buffer and replay the resulting pinyin phrase into
      * rime as a fresh key sequence. Uses best-effort (greedy prefix)
@@ -194,30 +244,12 @@ public final class RimeEngine implements ImeEngine {
      * (they would be echoed as ASCII); only segmented pinyin letters are sent.
      */
     private void pushPhraseToRime() {
-        String buf = digits.toString();
-        // Prefer a full (dictionary-ranked) segmentation when one exists so
-        // ambiguous T9 input resolves correctly ("64426" -> ni'hao, not the
-        // alphabetically-first mi'hao). Fall back to a best-effort prefix for
-        // mid-syllable buffers ("789" -> pu + pending "9"). Raw digits are
-        // never forwarded to rime.
-        String phraseKey;
-        String remainder;
-        String fullPhrase = T9Segmenter.bestPhraseKey(buf);
-        if (!fullPhrase.isEmpty() && !fullPhrase.equals(buf)) {
-            phraseKey = fullPhrase;
-            remainder = "";
-        } else {
-            T9Segmenter.Segment seg = T9Segmenter.bestEffort(buf);
-            phraseKey = seg.phraseKey;
-            remainder = seg.remainder;
-        }
-        String letters = T9Segmenter.phraseKeyToLetters(phraseKey);
+        String buf = session.getDigits();
+        String phraseKey = session.getPhraseKey();
+        String letters = phraseKey;
         currentPhraseKey = phraseKey;
-        composing = phraseKey.isEmpty()
-                ? buf
-                : (remainder.isEmpty() ? phraseKey : phraseKey + " " + remainder);
-        Log.d(TAG, "pushPhrase: digits=" + buf + " phrase=" + phraseKey
-                + " remainder=" + remainder + " letters=" + letters);
+        composing = session.getComposing();
+        Log.d(TAG, "pushPhrase: digits=" + buf + " phrase=" + phraseKey + " letters=" + letters);
         try {
             Rime.clearRimeComposition();
         } catch (Throwable t) {
@@ -263,6 +295,7 @@ public final class RimeEngine implements ImeEngine {
         Log.d(TAG, "getRimeCandidates -> count=" + (arr == null ? -1 : arr.length)
                 + " usable=" + list.size()
                 + (list.isEmpty() ? "" : " first=" + list.get(0)));
+        nativeCandidates = list;
         candidates = com.garaho.ime.user.UserWordSource.merge(currentPhraseKey, list, userWords);
         CommitProto pending = safeCommit();
         if (listener != null) {
@@ -280,6 +313,24 @@ public final class RimeEngine implements ImeEngine {
         } catch (Throwable t) {
             Log.w(TAG, "getRimeCommit failed: " + t);
             return null;
+        }
+    }
+
+    private List<String> nativeCandidates = Collections.emptyList();
+
+    private void clearAfterCommit(String text) {
+        try {
+            Rime.clearRimeComposition();
+        } catch (Throwable ignored) {
+        }
+        session.reset();
+        composing = "";
+        candidates = Collections.emptyList();
+        nativeCandidates = Collections.emptyList();
+        if (listener != null) {
+            listener.onCommit(text);
+            listener.onComposingChanged(composing);
+            listener.onCandidatesChanged(candidates);
         }
     }
 }

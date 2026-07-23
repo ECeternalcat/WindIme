@@ -182,7 +182,14 @@ public class SymbolPanel {
             return;
         }
         focus = next;
-        renderTab();
+        // Scroll the grid so the newly focused item is actually visible, then
+        // refresh the highlight without rebuilding the adapter (which would
+        // reset scroll back to the top).
+        grid.setSelection(focus);
+        BaseAdapter a = (BaseAdapter) grid.getAdapter();
+        if (a != null) {
+            a.notifyDataSetChanged();
+        }
     }
 
     private void renderTab() {
@@ -190,7 +197,6 @@ public class SymbolPanel {
                 ? context.getString(R.string.symbol_tab_symbol)
                 : context.getString(R.string.symbol_tab_phrase));
         final String[] items = currentItems();
-        final int focusRef = focus;
         grid.setAdapter(new BaseAdapter() {
             @Override
             public int getCount() {
@@ -222,7 +228,7 @@ public class SymbolPanel {
                 }
                 tv.setText(items[position]);
                 tv.setTextSize(14);
-                if (position == focusRef) {
+                if (position == focus) {
                     tv.setBackgroundColor(Color.rgb(0x33, 0x66, 0x99));
                     tv.setTextColor(Color.WHITE);
                 } else {
@@ -232,5 +238,6 @@ public class SymbolPanel {
                 return tv;
             }
         });
+        grid.setSelection(focus);
     }
 }
