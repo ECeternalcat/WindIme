@@ -25,15 +25,17 @@ public class SetupWizardActivity extends Activity {
 
     private static final long BUZZ_MS = 50;
 
+    /**
+     * Only device-specific function keys are calibrated. The D-Pad
+     * (NAV_UP/DOWN/LEFT/RIGHT), confirm (DPAD_CENTER/ENTER) and digit keys are
+     * Android-standard keycodes already covered by the bundled keymap and the
+     * always-on {@code STANDARD_ANDROID} fallback in {@code KeyMapper}, so they
+     * never need binding.
+     */
     private static final InputAction[] STEPS = {
             InputAction.TOGGLE_LANG_MODE,
             InputAction.SHOW_SYMBOL_PANEL,
             InputAction.BACKSPACE_DELETE,
-            InputAction.CONFIRM_SELECTION,
-            InputAction.NAV_UP,
-            InputAction.NAV_DOWN,
-            InputAction.NAV_LEFT,
-            InputAction.NAV_RIGHT,
     };
 
     private TextView promptView;
@@ -58,6 +60,20 @@ public class SetupWizardActivity extends Activity {
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        // BACK skips the current step (some flip-phones have no dedicated
+        // symbol / language key); after the last step BACK finishes normally.
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (currentStep < STEPS.length) {
+                currentStep++;
+                if (currentStep >= STEPS.length) {
+                    finishWizard();
+                } else {
+                    renderStep();
+                }
+                return true;
+            }
+            return super.onKeyDown(keyCode, event);
+        }
         if (currentStep >= STEPS.length) {
             return super.onKeyDown(keyCode, event);
         }
@@ -80,12 +96,8 @@ public class SetupWizardActivity extends Activity {
         }
         InputAction a = STEPS[currentStep];
         promptView.setText(getString(R.string.wizard_press_action_prompt, displayName(a)));
-        if (a == InputAction.BACKSPACE_DELETE) {
-            tipView.setText(R.string.wizard_back_as_delete_tip);
-            tipView.setVisibility(android.view.View.VISIBLE);
-        } else {
-            tipView.setVisibility(android.view.View.GONE);
-        }
+        tipView.setText(R.string.wizard_skip_tip);
+        tipView.setVisibility(android.view.View.VISIBLE);
         StringBuilder sb = new StringBuilder();
         sb.append(getString(R.string.wizard_step_format, currentStep + 1, STEPS.length)).append('\n');
         for (Map.Entry<InputAction, KeyMapConfig.Mapping> e : captured.entrySet()) {
