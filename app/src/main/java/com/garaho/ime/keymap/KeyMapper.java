@@ -136,8 +136,15 @@ public final class KeyMapper {
      * A key is reserved when the fallback binds it to a <i>different</i> core
      * action than the one being calibrated - binding it would shadow input or
      * navigation (e.g. pressing "2" to set 中英切换 would break T9 typing).
+     *
+     * <p>Exception: {@code *} (STAR) and {@code #} (POUND) are freely bindable.
+     * On many Japanese flip-phones these physical keys ARE the symbol / enter
+     * keys, so the user must be able to repurpose them.
      */
     public static boolean isReservedFor(int keyCode, InputAction target) {
+        if (keyCode == 17 || keyCode == 18) {
+            return false;
+        }
         InputAction std = standardActionOf(keyCode);
         return std != InputAction.NONE && std != target;
     }
