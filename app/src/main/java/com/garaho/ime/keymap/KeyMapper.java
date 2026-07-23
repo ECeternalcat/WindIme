@@ -123,6 +123,26 @@ public final class KeyMapper {
     }
 
     /**
+     * @return the {@link InputAction} a keyCode is hard-reserved for by the
+     *         Android-standard fallback (digits, *, #, D-Pad, OK, ENTER, DEL),
+     *         or {@link InputAction#NONE} if it is a free/vendor key.
+     */
+    public static InputAction standardActionOf(int keyCode) {
+        InputAction a = STANDARD_ANDROID.get(keyCode);
+        return a == null ? InputAction.NONE : a;
+    }
+
+    /**
+     * A key is reserved when the fallback binds it to a <i>different</i> core
+     * action than the one being calibrated - binding it would shadow input or
+     * navigation (e.g. pressing "2" to set 中英切换 would break T9 typing).
+     */
+    public static boolean isReservedFor(int keyCode, InputAction target) {
+        InputAction std = standardActionOf(keyCode);
+        return std != InputAction.NONE && std != target;
+    }
+
+    /**
      * Persist a freshly calibrated mapping to {@code user_keymap.json} (doc §3.2 step 5).
      */
     public boolean saveUserConfig(KeyMapConfig newConfig) {

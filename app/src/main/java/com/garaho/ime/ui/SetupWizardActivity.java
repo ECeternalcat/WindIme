@@ -78,6 +78,28 @@ public class SetupWizardActivity extends Activity {
             return super.onKeyDown(keyCode, event);
         }
         InputAction target = STEPS[currentStep];
+        // Reject keys reserved for core input/navigation (digits, *, #, D-Pad,
+        // OK, ENTER) - binding them to a function would shadow T9 typing or
+        // cursor movement. Confirming the standard DEL(67) for the backspace
+        // step is allowed.
+        if (KeyMapper.isReservedFor(keyCode, target)) {
+            tipView.setText(R.string.wizard_reserved_key);
+            tipView.setVisibility(android.view.View.VISIBLE);
+            buzz();
+            return true;
+        }
+        // Reject a key already bound to another action this session.
+        for (Map.Entry<InputAction, KeyMapConfig.Mapping> e : captured.entrySet()) {
+            KeyMapConfig.Mapping m = e.getValue();
+            if (e.getKey() != target
+                    && (m.keycode == keyCode
+                    || (event.getScanCode() != 0 && m.scanCode == event.getScanCode()))) {
+                tipView.setText(R.string.wizard_already_bound);
+                tipView.setVisibility(android.view.View.VISIBLE);
+                buzz();
+                return true;
+            }
+        }
         KeyMapConfig.Mapping m = new KeyMapConfig.Mapping(event.getScanCode(), keyCode, target);
         captured.put(target, m);
         buzz();

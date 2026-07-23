@@ -15,6 +15,8 @@
     <string name="wizard_done_ok">校准完成，已保存为 user_keymap.json</string>
     <string name="wizard_done_fail">保存失败，请重试</string>
     <string name="wizard_skip_tip">没有此键？按 返回 跳过本步</string>
+    <string name="wizard_reserved_key">该键已保留给输入/导航，请按其它键</string>
+    <string name="wizard_already_bound">该键已绑给其它功能，请按其它键</string>
 
     <string name="action_lang_mode">中英切换</string>
     <string name="action_symbol_panel">符号表</string>
