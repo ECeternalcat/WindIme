@@ -277,7 +277,8 @@ public class CandidateBar extends LinearLayout {
                 tv.setBackgroundColor(Color.TRANSPARENT);
                 tv.setTextColor(Color.BLACK);
             }
-            LayoutParams lp = new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            LayoutParams lp = new LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, Math.max(1f, (float) label.length()));
             candidateRow.addView(tv, lp);
         }
         invalidate();
@@ -308,7 +309,8 @@ public class CandidateBar extends LinearLayout {
                 tv.setBackgroundColor(Color.TRANSPARENT);
                 tv.setTextColor(Color.BLACK);
             }
-            pinyinRow.addView(tv, new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            pinyinRow.addView(tv, new LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, Math.max(1f, (float) pinyinOptions[i].length())));
         }
     }
 
