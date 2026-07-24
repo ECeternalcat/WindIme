@@ -9,4 +9,13 @@
     <color name="symbol_focus">#FF336699</color>
 
     <color name="primary_text">#FF111111</color>
+
+    <!-- Brand header bar -->
+    <color name="brand_primary">#FF336699</color>
+    <color name="brand_primary_dark">#FF264A6E</color>
+    <color name="brand_accent">#FF4A90C2</color>
+
+    <!-- List focus (system-settings style: light fill + deeper thin border) -->
+    <color name="list_focus_fill">#FFDCEAF5</color>
+    <color name="list_focus_border">#FF336699</color>
 </resources>

@@ -2,40 +2,85 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="16dp">
+    android:orientation="vertical">
 
-    <TextView
-        android:id="@+id/wizard_prompt"
+    <!-- Brand header bar (consistent with the menu pages). -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textSize="22sp"
-        android:textStyle="bold"
-        android:focusable="true"
-        android:paddingBottom="12dp" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/brand_primary_dark"
+        android:minHeight="48dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp">
 
-    <TextView
-        android:id="@+id/wizard_tip"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@color/candidate_focus"
-        android:padding="10dp"
-        android:textColor="@color/candidate_focus_text"
-        android:textSize="15sp"
-        android:textStyle="bold"
-        android:visibility="gone" />
+        <ImageView
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginEnd="10dp"
+            android:adjustViewBounds="true"
+            android:src="@mipmap/ic_launcher"
+            android:contentDescription="@string/app_name" />
 
-    <TextView
-        android:id="@+id/wizard_status"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textSize="14sp"
-        android:paddingBottom="12dp" />
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:text="@string/title_setup_wizard"
+            android:textColor="@color/candidate_focus_text"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+    </LinearLayout>
 
-    <TextView
+    <View
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textSize="12sp"
-        android:text="@string/wizard_factory_escape_hint" />
+        android:layout_height="2dp"
+        android:background="@color/brand_accent" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/wizard_prompt"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:focusable="true"
+            android:paddingBottom="12dp" />
+
+        <TextView
+            android:id="@+id/wizard_tip"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/candidate_focus"
+            android:padding="10dp"
+            android:textColor="@color/candidate_focus_text"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/wizard_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:paddingBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:text="@string/wizard_factory_escape_hint" />
+
+    </LinearLayout>
 
 </LinearLayout>

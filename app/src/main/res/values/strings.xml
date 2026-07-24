@@ -28,6 +28,11 @@
     <string name="action_confirm">确认 / 换行</string>
     <string name="action_enter">回车 / 换行</string>
     <string name="action_dismiss">关闭输入法</string>
+    <string name="action_softkey_left">左软键（菜单）</string>
+    <string name="action_softkey_right">右软键（符号）</string>
+    <string name="softkey_complete">完成</string>
+    <string name="softkey_menu">菜单</string>
+    <string name="softkey_symbol">符号</string>
     <string name="action_nav_up">向上</string>
     <string name="action_nav_down">向下</string>
     <string name="action_nav_left">向左</string>

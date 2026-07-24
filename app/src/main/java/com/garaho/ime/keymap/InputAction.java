@@ -39,6 +39,10 @@ public enum InputAction {
     ENTER,
     /** Hide the IME / exit fullscreen, keeping committed text. */
     DISMISS_IME,
+    /** Left soft key -> opens the quick menu. Kyocera Softkey Guide label "菜单". */
+    SOFTKEY_LEFT,
+    /** Right soft key -> opens the symbol/phrase panel. Softkey Guide label "符号". */
+    SOFTKEY_RIGHT,
 
     NONE;
 

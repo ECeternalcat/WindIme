@@ -1,5 +1,6 @@
 package com.garaho.ime;
 
+import com.garaho.ime.compat.SoftkeyGuideHelper;
 import com.garaho.ime.engine.ChineseMultiTapEngine;
 import com.garaho.ime.engine.EngineListener;
 import com.garaho.ime.engine.EnglishCapitalization;
@@ -72,6 +73,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private KeyMapper keyMapper;
     private GarahoPrefs prefs;
     private KeyFeedback keyFeedback;
+    private SoftkeyGuideHelper softkeyGuide;
     private ImeEngine pinyinEngine;
     private volatile RimeEngine pendingRimeEngine;
     private volatile boolean destroyed;
@@ -148,6 +150,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         prefs = new GarahoPrefs(this);
         keyFeedback = new KeyFeedback(this);
         keyFeedback.setMode(prefs.getFeedback());
+        softkeyGuide = SoftkeyGuideHelper.create(this);
         zhMultiTapEngine = new ChineseMultiTapEngine(prefs);
         zhMultiTapEngine.setListener(this);
         enMultiTapEngine = new EnglishMultiTapEngine(prefs);
@@ -319,6 +322,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             maybePromptKeymapSetup();
         }
         refreshFullscreenText();
+        refreshSoftkeyGuide();
         Log.d(TAG, "onStartInputView restarting=" + restarting);
     }
 
@@ -334,6 +338,10 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     @Override
     public void onFinishInputView(boolean finishingInput) {
         inputViewActive = false;
+        // Clear any vendor Softkey Guide label so it does not leak to the next window.
+        if (softkeyGuide != null) {
+            refreshSoftkeyGuide();
+        }
         Log.d(TAG, "onFinishInputView finishingInput=" + finishingInput);
         super.onFinishInputView(finishingInput);
     }
@@ -879,12 +887,17 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                     // the framework does not run Done in the middle of input.
                     return true;
                 }
-                // Idle: do NOT consume OK. Returning false lets the host /
-                // carrier framework run its native center-OK action (e.g. on
-                // SoftBank this is Done -> save, and the Softkey Guide then
-                // shows Done instead of a placeholder). A field that sets
-                // IME_FLAG_NO_ENTER_ACTION would otherwise make WindIme insert
-                // a newline here, which broke saving in the Mail/SMS app.
+                // Idle. On the SoftBank Mail field the host finishes/saves via a
+                // vendor private IME command (IME_User_Action_CSKKey), not via the
+                // standard editor action and not via key pass-through (np701kc.md
+                // §6/§9). performPrivateCommand is a standard InputConnection API
+                // and unknown hosts ignore it, so it is safe but scoped to sbm_y_mail.
+                if (isSoftbankMailField()) {
+                    performSoftbankMailComplete();
+                    return true;
+                }
+                // Other idle fields: do NOT consume OK. Returning false lets the
+                // host / carrier framework run its native center-OK action.
                 return false;
 
             case BACKSPACE_DELETE:
@@ -930,10 +943,13 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 if (confirmModeBar()) {
                     return true;
                 }
-                // Mode bar is idle (composing empty): pass OK to the framework
-                // so it can run its native action (Done/save) and show the
-                // correct Softkey Guide label, instead of WindIme inserting a
-                // newline or consuming the key.
+                // Mode bar is up => composing empty (idle). On the SoftBank Mail
+                // field, send the vendor CSKKey complete command so the host
+                // saves/exits (np701kc.md). Other idle fields pass OK through.
+                if (isSoftbankMailField()) {
+                    performSoftbankMailComplete();
+                    return true;
+                }
                 return false;
             case TOGGLE_LANG_MODE:
                 advanceModeBarToNextInputMode();
@@ -1094,6 +1110,90 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         requestHideSelf(0);
         Log.d(TAG, "Mapped BACK found nothing to delete; hiding IME");
         return true;
+    }
+
+    // ---- SoftBank Mail vendor "complete" protocol (np701kc.md) ----
+
+    /** The host is the SoftBank Mail composer (privateImeOptions contains sbm_y_mail). */
+    private boolean isSoftbankMailField() {
+        android.view.inputmethod.EditorInfo ei = getCurrentInputEditorInfo();
+        return ei != null && ei.privateImeOptions != null
+                && ei.privateImeOptions.contains("sbm_y_mail");
+    }
+
+    /**
+     * Send iWnn's private "center-softkey complete" command so the SoftBank Mail
+     * composer saves and exits, then also fire the field's standard editor
+     * action and hide the IME. Mirrors iWnn's processImeHide: the private CSKKey
+     * command is sent first, then (per the field's imeOptions) the standard
+     * editor action; the NO_ENTER_ACTION flag only affects the Enter *key*, not
+     * an explicit performEditorAction, so we still send it.
+     */
+    /**
+     * Complete the SoftBank Mail composer: send the vendor "Finish_IME" private
+     * command that Mail maps to g.a -> pk.b() -> onBackPressed(), which reads
+     * the body, sets the result Intent and finishes the composer (saving and
+     * returning to the send page). The bundle carries isActiveFinish=true per
+     * the iWnn protocol (np701kc.md §6.4/§8.2). CSKKey is sent first as a
+     * harmless pre-notification (Mail maps it to a no-op g.h). performEditorAction
+     * is intentionally NOT used: the field carries IME_FLAG_NO_ENTER_ACTION and
+     * the save path is the vendor command, not the standard action.
+     */
+    private void performSoftbankMailComplete() {
+        android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
+        Log.d(TAG, "performSoftbankMailComplete ic=" + (ic != null));
+        if (ic != null) {
+            try {
+                ic.performPrivateCommand("IME_User_Action_CSKKey", null);
+            } catch (Throwable ignored) {
+            }
+            try {
+                android.os.Bundle bundle = new android.os.Bundle();
+                bundle.putBoolean("isActiveFinish", true);
+                ic.performPrivateCommand("Finish_IME", bundle);
+                Log.d(TAG, "Finish_IME sent");
+            } catch (Throwable t) {
+                Log.w(TAG, "Finish_IME failed: " + t);
+            }
+        }
+        inputViewActive = false;
+        showModeBar = true;
+        requestHideSelf(0);
+    }
+
+    /** Idle (no composing, no modal panel) and on the SoftBank Mail field. */
+    private boolean isSoftkeyCompleteState() {
+        if (currentComposing != null && currentComposing.length() > 0) {
+            return false;
+        }
+        if (symbolPanel != null && symbolPanel.isShowing()) {
+            return false;
+        }
+        if (quickMenuPanel != null && quickMenuPanel.isShowing()) {
+            return false;
+        }
+        return isSoftbankMailField();
+    }
+
+    /**
+     * Refresh the center Softkey Guide label on vendor devices: "完成" only while
+     * idle in the SoftBank Mail field; cleared otherwise so it never shows a stale
+     * "complete" label during composing / candidate / panel states. No-op on
+     * devices without the vendor Softkey Guide framework.
+     */
+    private void refreshSoftkeyGuide() {
+        if (softkeyGuide == null) {
+            return;
+        }
+        android.view.Window w = null;
+        try {
+            // InputMethodService.getWindow() is the IME Dialog; its Window is what
+            // the vendor Softkey Guide is attached to (np701kc.md §5.1).
+            w = getWindow().getWindow();
+        } catch (Throwable ignored) {
+        }
+        CharSequence label = isSoftkeyCompleteState() ? getString(R.string.softkey_complete) : "";
+        softkeyGuide.setCenterLabel(w, label);
     }
 
     /** Delete one char (or the active selection) from the editor via the InputConnection. */
@@ -1398,6 +1498,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             });
         }
         symbolPanel.show(rootContainer);
+        refreshSoftkeyGuide();
     }
 
     private void toggleQuickMenu() {
@@ -1406,6 +1507,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         }
         if (quickMenuPanel != null && quickMenuPanel.isShowing()) {
             quickMenuPanel.dismiss();
+            refreshSoftkeyGuide();
             return;
         }
         if (symbolPanel != null && symbolPanel.isShowing()) {
@@ -1420,6 +1522,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             });
         }
         showMainQuickMenu();
+        refreshSoftkeyGuide();
     }
 
     private void showMainQuickMenu() {
@@ -1586,6 +1689,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (candidateBar != null) {
             candidateBar.setComposingText(composing);
         }
+        refreshSoftkeyGuide();
     }
 
     @Override
@@ -1603,6 +1707,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 candidateBar.setPinyinOptions(new String[0], -1);
             }
         }
+        refreshSoftkeyGuide();
     }
 
     @Override

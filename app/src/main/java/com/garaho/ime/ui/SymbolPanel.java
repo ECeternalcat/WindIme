@@ -222,8 +222,8 @@ public class SymbolPanel {
                 tv.setText(items[position]);
                 tv.setTextSize(14);
                 if (position == focusRef) {
-                    tv.setBackgroundColor(Color.rgb(0x33, 0x66, 0x99));
-                    tv.setTextColor(Color.WHITE);
+                    tv.setBackgroundResource(R.drawable.list_focus_bg);
+                    tv.setTextColor(Color.BLACK);
                 } else {
                     tv.setBackgroundColor(Color.TRANSPARENT);
                     tv.setTextColor(Color.BLACK);

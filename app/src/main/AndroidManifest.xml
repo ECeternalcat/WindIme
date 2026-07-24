@@ -12,6 +12,14 @@
         android:theme="@style/GarahoTheme"
         android:directBootAware="true">
 
+        <!-- Kyocera/SoftBank vendor shared lib (NfpSoftkeyGuide). Optional: only
+             present on devices like the 701KC. Used via reflection so the APK
+             still installs and runs on ordinary Android. required=false ensures
+             installation never depends on it. -->
+        <uses-library
+            android:name="com.nextfp.android.util"
+            android:required="false" />
+
         <service
             android:name=".GarahoImeService"
             android:exported="true"

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Focused/selected list row: light-blue fill with a deeper-blue thin border,
+     to mirror the system settings page selection (instead of a solid deep blue). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/list_focus_fill" />
+    <stroke
+        android:width="2dp"
+        android:color="@color/list_focus_border" />
+</shape>

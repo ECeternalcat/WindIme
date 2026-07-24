@@ -92,8 +92,8 @@ public class CandidateBar extends LinearLayout {
             tv.setTextSize(13);
             tv.setMinimumHeight(0);
             if (i == hi) {
-                tv.setBackgroundColor(Color.rgb(0x33, 0x66, 0x99));
-                tv.setTextColor(Color.WHITE);
+                tv.setBackgroundResource(R.drawable.list_focus_bg);
+                tv.setTextColor(Color.BLACK);
                 tv.setTypeface(tv.getTypeface(), android.graphics.Typeface.BOLD);
             } else {
                 tv.setBackgroundColor(Color.TRANSPARENT);
@@ -278,13 +278,17 @@ public class CandidateBar extends LinearLayout {
             tv.setMinimumHeight(0);
             tv.setMaxWidth(maxCellPx);
             if (i == candidateFocusIndex) {
-                tv.setBackgroundColor(activeLayer == InputLayer.CANDIDATE
-                        ? Color.rgb(0x33, 0x66, 0x99)
-                        : Color.rgb(0x99, 0xBB, 0xCC));
-                tv.setTextColor(activeLayer == InputLayer.CANDIDATE ? Color.WHITE : Color.BLACK);
-                tv.setTypeface(tv.getTypeface(), activeLayer == InputLayer.CANDIDATE
-                        ? android.graphics.Typeface.BOLD
-                        : android.graphics.Typeface.NORMAL);
+                if (activeLayer == InputLayer.CANDIDATE) {
+                    // System-settings style: light-blue fill + thin border, dark text.
+                    tv.setBackgroundResource(R.drawable.list_focus_bg);
+                    tv.setTextColor(Color.BLACK);
+                    tv.setTypeface(tv.getTypeface(), android.graphics.Typeface.BOLD);
+                } else {
+                    // Dim highlight on the non-active layer.
+                    tv.setBackgroundColor(Color.rgb(0xE3, 0xE3, 0xE3));
+                    tv.setTextColor(Color.BLACK);
+                    tv.setTypeface(tv.getTypeface(), android.graphics.Typeface.NORMAL);
+                }
                 focusedCandidateView = tv;
             } else {
                 tv.setBackgroundColor(Color.TRANSPARENT);
@@ -370,13 +374,15 @@ public class CandidateBar extends LinearLayout {
             tv.setTextSize(13);
             tv.setMinimumHeight(0);
             if (i == pinyinFocusIndex) {
-                tv.setBackgroundColor(activeLayer == InputLayer.PINYIN
-                        ? Color.rgb(0x33, 0x66, 0x99)
-                        : Color.rgb(0x99, 0xBB, 0xCC));
-                tv.setTextColor(activeLayer == InputLayer.PINYIN ? Color.WHITE : Color.BLACK);
-                tv.setTypeface(tv.getTypeface(), activeLayer == InputLayer.PINYIN
-                        ? android.graphics.Typeface.BOLD
-                        : android.graphics.Typeface.NORMAL);
+                if (activeLayer == InputLayer.PINYIN) {
+                    tv.setBackgroundResource(R.drawable.list_focus_bg);
+                    tv.setTextColor(Color.BLACK);
+                    tv.setTypeface(tv.getTypeface(), android.graphics.Typeface.BOLD);
+                } else {
+                    tv.setBackgroundColor(Color.rgb(0xE3, 0xE3, 0xE3));
+                    tv.setTextColor(Color.BLACK);
+                    tv.setTypeface(tv.getTypeface(), android.graphics.Typeface.NORMAL);
+                }
             } else {
                 tv.setBackgroundColor(Color.TRANSPARENT);
                 tv.setTextColor(Color.BLACK);

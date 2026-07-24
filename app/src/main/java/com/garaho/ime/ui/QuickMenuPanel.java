@@ -155,8 +155,8 @@ public final class QuickMenuPanel {
                 }
                 row.setText(items[position]);
                 if (position == selected) {
-                    row.setBackgroundColor(context.getResources().getColor(R.color.candidate_focus));
-                    row.setTextColor(context.getResources().getColor(R.color.candidate_focus_text));
+                    row.setBackgroundResource(R.drawable.list_focus_bg);
+                    row.setTextColor(context.getResources().getColor(R.color.primary_text));
                 } else {
                     row.setBackgroundColor(Color.TRANSPARENT);
                     row.setTextColor(context.getResources().getColor(R.color.primary_text));
