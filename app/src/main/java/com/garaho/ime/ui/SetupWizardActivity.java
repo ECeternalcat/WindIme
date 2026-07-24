@@ -40,6 +40,8 @@ public class SetupWizardActivity extends Activity {
             InputAction.SHOW_SYMBOL_PANEL,
             InputAction.SHOW_QUICK_MENU,
             InputAction.BACKSPACE_DELETE,
+            InputAction.ENTER,
+            InputAction.DISMISS_IME,
     };
 
     private TextView promptView;
@@ -259,6 +261,8 @@ public class SetupWizardActivity extends Activity {
             case SHOW_SYMBOL_PANEL: return getString(R.string.action_symbol_panel);
             case SHOW_QUICK_MENU: return getString(R.string.action_quick_menu);
             case BACKSPACE_DELETE: return getString(R.string.action_backspace);
+            case ENTER: return getString(R.string.action_enter);
+            case DISMISS_IME: return getString(R.string.action_dismiss);
             case CONFIRM_SELECTION: return getString(R.string.action_confirm);
             case NAV_UP: return getString(R.string.action_nav_up);
             case NAV_DOWN: return getString(R.string.action_nav_down);

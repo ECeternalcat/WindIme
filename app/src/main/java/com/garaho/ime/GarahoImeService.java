@@ -66,6 +66,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private static final int RIME_MAX_RETRIES = 20;
     private static final long READY_FLASH_MS = 500L;
     private static final int CAPITALIZE_LOOKBACK = 16;
+    private static final int FS_LOOKBACK = 200;
     private static final String RIME_SCHEMA_ID = "rime_ice";
 
     private KeyMapper keyMapper;
@@ -82,6 +83,8 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private InputMode mode = InputMode.ZH;
 
     private CandidateBar candidateBar;
+    private android.widget.TextView fullscreenText;
+    private boolean inputViewFullscreen;
     private SymbolPanel symbolPanel;
     private QuickMenuPanel quickMenuPanel;
     private FrameLayout rootContainer;
@@ -158,25 +161,126 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     @Override
     public View onCreateInputView() {
-        LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
         rootContainer = new FrameLayout(this);
         // The input view must not steal focus from the host editor - if it
         // does, getCurrentInputConnection() can go null and commits silently
         // drop. Keep it non-focusable; key events still arrive via onKeyDown.
         rootContainer.setFocusable(false);
         rootContainer.setFocusableInTouchMode(false);
+        buildInputView();
+        return rootContainer;
+    }
+
+    /**
+     * (Re)build the input view for the current fullscreen setting. Called from
+     * {@link #onCreateInputView()} and again from {@link #onStartInputView}
+     * whenever the user toggles 全屏输入模式 in settings, so the change takes
+     * effect on the next focused field without restarting the IME process.
+     */
+    private void buildInputView() {
+        // Detach any modal panels first: their overlay views are children of
+        // rootContainer and would be orphaned by removeAllViews.
+        if (symbolPanel != null && symbolPanel.isShowing()) {
+            symbolPanel.dismiss();
+        }
+        if (quickMenuPanel != null && quickMenuPanel.isShowing()) {
+            quickMenuPanel.dismiss();
+        }
+        symbolPanel = null;
+        quickMenuPanel = null;
+        rootContainer.removeAllViews();
+
+        LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
         candidateBar = (CandidateBar) inflater.inflate(R.layout.view_candidate_bar, rootContainer, false);
         candidateBar.setFocusable(false);
         candidateBar.setFocusableInTouchMode(false);
         candidateBar.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
-        rootContainer.addView(candidateBar,
-                new FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        boolean fullscreen = prefs != null && prefs.isFullscreenInputEnabled();
+        inputViewFullscreen = fullscreen;
+        if (fullscreen) {
+            // Native InputMethodService fullscreen-extract mode does not work
+            // on hardware-keyboard flip phones (the framework neither shows our
+            // candidate strip nor lets onKeyDown consume keys). Instead we make
+            // the normal input view itself cover the screen: a white text-mirror
+            // area on top with the existing candidate strip pinned at the bottom.
+            // Keys still route through onKeyDown, so T9 / feedback / menus work
+            // exactly as in compact mode.
+            rootContainer.setBackgroundColor(android.graphics.Color.WHITE);
+            rootContainer.setMinimumHeight(displayHeightPx());
+
+            android.widget.LinearLayout fs =
+                    new android.widget.LinearLayout(this);
+            fs.setOrientation(android.widget.LinearLayout.VERTICAL);
+            fs.setMinimumHeight(displayHeightPx());
+            fs.setLayoutParams(new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+
+            fullscreenText = new android.widget.TextView(this);
+            fullscreenText.setTextColor(android.graphics.Color.BLACK);
+            fullscreenText.setBackgroundColor(android.graphics.Color.WHITE);
+            fullscreenText.setGravity(android.view.Gravity.TOP | android.view.Gravity.START);
+            fullscreenText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 18);
+            int pad = dp(12);
+            fullscreenText.setPadding(pad, pad, pad, pad);
+            fs.addView(fullscreenText, new android.widget.LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+            fs.addView(candidateBar, new android.widget.LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            rootContainer.addView(fs, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+        } else {
+            // Reset the fullscreen-only styling so the compact strip sizes
+            // itself to its content again.
+            rootContainer.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            rootContainer.setMinimumHeight(0);
+            fullscreenText = null;
+            rootContainer.addView(candidateBar, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
         candidateBar.setModeLabel(indicatorLabel());
         updateBackendStatus();
         enterModeBar();
-        return rootContainer;
+        refreshFullscreenText();
+    }
+
+    private int displayHeightPx() {
+        return getResources().getDisplayMetrics().heightPixels;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    /**
+     * Mirror the host editor's committed text into the fullscreen white area
+     * (before-cursor | after-cursor). Composing preview is already shown on the
+     * candidate strip, so it is not duplicated here.
+     */
+    private void refreshFullscreenText() {
+        if (fullscreenText == null) {
+            return;
+        }
+        android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
+        StringBuilder sb = new StringBuilder();
+        if (ic != null) {
+            CharSequence before = ic.getTextBeforeCursor(FS_LOOKBACK, 0);
+            CharSequence after = ic.getTextAfterCursor(FS_LOOKBACK, 0);
+            if (before != null) {
+                sb.append(before);
+            }
+            sb.append('\u2502');
+            if (after != null) {
+                sb.append(after);
+            }
+        }
+        fullscreenText.setText(sb);
     }
 
     @Override
@@ -189,12 +293,24 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         inputSessionActive = true;
         inputViewActive = false;
         showModeBar = true;
-        Log.d(TAG, "onStartInput restarting=" + restarting);
+        int actionId = attribute.imeOptions & 0x000000ff;
+        Log.d(TAG, "onStartInput restarting=" + restarting
+                + " inputType=0x" + Integer.toHexString(attribute.inputType)
+                + " imeOptions=0x" + Integer.toHexString(attribute.imeOptions)
+                + " actionId=" + actionId
+                + " actionLabel=" + attribute.actionLabel
+                + " packageName=" + attribute.packageName);
     }
 
     @Override
     public void onStartInputView(android.view.inputmethod.EditorInfo info, boolean restarting) {
         super.onStartInputView(info, restarting);
+        // The input view is created once per process; rebuild it if the user
+        // toggled 全屏输入模式 in settings since it was last built.
+        if (rootContainer != null && prefs != null
+                && prefs.isFullscreenInputEnabled() != inputViewFullscreen) {
+            buildInputView();
+        }
         inputSessionActive = true;
         inputViewActive = true;
         adoptReadyRimeEngine();
@@ -202,7 +318,17 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (!restarting) {
             maybePromptKeymapSetup();
         }
+        refreshFullscreenText();
         Log.d(TAG, "onStartInputView restarting=" + restarting);
+    }
+
+    @Override
+    public void onUpdateSelection(int oldSelStart, int oldSelEnd, int newSelStart, int newSelEnd,
+            int candidatesStart, int candidatesEnd) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd,
+                candidatesStart, candidatesEnd);
+        // Cursor moved in the host editor: keep the fullscreen mirror in sync.
+        refreshFullscreenText();
     }
 
     @Override
@@ -719,9 +845,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 return handleDigit(action);
 
             case NAV_LEFT:
-                return moveLayerFocus(-1);
+                return navigateOrMoveCursor(-1);
             case NAV_RIGHT:
-                return moveLayerFocus(1);
+                return navigateOrMoveCursor(1);
             case NAV_UP:
                 if (candidateBar != null) {
                     ImeEngine upEngine = activeEngine();
@@ -749,12 +875,27 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                     return true;
                 }
                 if (hadImeComposition) {
+                    // Mid-composition with nothing highlighted: keep OK modal so
+                    // the framework does not run Done in the middle of input.
                     return true;
                 }
-                return performEditorActionOrNewline();
+                // Idle: do NOT consume OK. Returning false lets the host /
+                // carrier framework run its native center-OK action (e.g. on
+                // SoftBank this is Done -> save, and the Softkey Guide then
+                // shows Done instead of a placeholder). A field that sets
+                // IME_FLAG_NO_ENTER_ACTION would otherwise make WindIme insert
+                // a newline here, which broke saving in the Mail/SMS app.
+                return false;
 
             case BACKSPACE_DELETE:
                 return handleBackspace();
+
+            case ENTER:
+                return handleEnter();
+
+            case DISMISS_IME:
+                dismissIme();
+                return true;
 
             case TOGGLE_LANG_MODE:
                 cycleLanguageMode();
@@ -789,7 +930,11 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 if (confirmModeBar()) {
                     return true;
                 }
-                return performEditorActionOrNewline();
+                // Mode bar is idle (composing empty): pass OK to the framework
+                // so it can run its native action (Done/save) and show the
+                // correct Softkey Guide label, instead of WindIme inserting a
+                // newline or consuming the key.
+                return false;
             case TOGGLE_LANG_MODE:
                 advanceModeBarToNextInputMode();
                 return true;
@@ -801,6 +946,11 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 return true;
             case BACKSPACE_DELETE:
                 return deleteFromEditor();
+            case ENTER:
+                return handleEnter();
+            case DISMISS_IME:
+                dismissIme();
+                return true;
             case INPUT_KEY_0:
             case INPUT_KEY_1:
             case INPUT_KEY_2:
@@ -883,6 +1033,48 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             return true;
         }
         return deleteFromEditor();
+    }
+
+    /**
+     * Pure newline (calibrate-able ENTER, e.g. the {@code *} key whose glyph on
+     * Japanese flip phones is a return arrow). If a composition is in flight the
+     * top candidate is committed first so the input is not lost, then a newline
+     * is inserted. Distinct from OK, which triggers the editor action.
+     */
+    private boolean handleEnter() {
+        flushMultiTapIfActive();
+        ImeEngine active = activeEngine();
+        if (active != null && active.candidateCount() > 0) {
+            active.selectCandidate(0);
+        }
+        commitTextToEditor("\n");
+        return true;
+    }
+
+    /**
+     * Hide the IME (exit fullscreen / collapse the candidate strip), keeping all
+     * committed text. Used when BACK is bound to backspace and OK to enter, so a
+     * dedicated key is needed to close the input. Any in-flight composition is
+     * committed first so nothing is lost.
+     */
+    private void dismissIme() {
+        flushMultiTapIfActive();
+        ImeEngine active = activeEngine();
+        if (active != null && active.candidateCount() > 0) {
+            active.selectCandidate(0);
+        }
+        if (active != null) {
+            active.reset();
+        }
+        inputViewActive = false;
+        showModeBar = true;
+        if (symbolPanel != null && symbolPanel.isShowing()) {
+            symbolPanel.dismiss();
+        }
+        if (quickMenuPanel != null && quickMenuPanel.isShowing()) {
+            quickMenuPanel.dismiss();
+        }
+        requestHideSelf(0);
     }
 
     private boolean handleBoundBackKey() {
@@ -999,6 +1191,24 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             return ((LayeredPinyinEngine) active)
                     .previewPinyinOption(candidateBar.getPinyinFocusIndex());
         }
+        return true;
+    }
+
+    /**
+     * While composing (pinyin candidates, English candidates, or a cycling
+     * multi-tap letter is on screen), LEFT/RIGHT navigates the candidate strip.
+     * Once input is idle - nothing composing - LEFT/RIGHT moves the host
+     * editor's cursor instead, so the user can reposition within already
+     * committed text. {@link #sendDownUpKeyEvents} forwards a synthetic D-Pad
+     * key to the host editor via the InputConnection; it does not re-enter the
+     * IME's own {@code onKeyDown}.
+     */
+    private boolean navigateOrMoveCursor(int delta) {
+        if (currentComposing != null && currentComposing.length() > 0) {
+            return moveLayerFocus(delta);
+        }
+        int keyCode = delta < 0 ? KeyEvent.KEYCODE_DPAD_LEFT : KeyEvent.KEYCODE_DPAD_RIGHT;
+        sendDownUpKeyEvents(keyCode);
         return true;
     }
 
@@ -1405,6 +1615,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             text = maybeCapitalize(text);
         }
         commitTextToEditor(text);
+        refreshFullscreenText();
     }
 
     /**

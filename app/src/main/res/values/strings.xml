@@ -26,6 +26,8 @@
     <string name="action_quick_menu">快捷菜单</string>
     <string name="action_backspace">退格删除</string>
     <string name="action_confirm">确认 / 换行</string>
+    <string name="action_enter">回车 / 换行</string>
+    <string name="action_dismiss">关闭输入法</string>
     <string name="action_nav_up">向上</string>
     <string name="action_nav_down">向下</string>
     <string name="action_nav_left">向左</string>
@@ -78,6 +80,7 @@
     <string name="input_key_feedback">按键反馈</string>
     <string name="input_auto_caps">首字母大写</string>
     <string name="input_mtap_interval">Multi-tap 间隔</string>
+    <string name="input_fullscreen">全屏输入模式</string>
 
     <string name="mode_zh_t9">中文 T9</string>
     <string name="mode_zh_mtap">中文 Multi-tap</string>

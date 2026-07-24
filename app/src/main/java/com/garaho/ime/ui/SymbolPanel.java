@@ -77,9 +77,13 @@ public class SymbolPanel {
             pageTitle = root.findViewById(R.id.symbol_page_label);
             grid = root.findViewById(R.id.symbol_grid);
             grid.setNumColumns(4);
-            parent.addView(root, new FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT));
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            // Pin to the bottom so the panel sits over the candidate strip in
+            // fullscreen mode (rootContainer is full-screen there).
+            lp.gravity = Gravity.BOTTOM;
+            parent.addView(root, lp);
             attached = true;
         }
         root.setVisibility(View.VISIBLE);

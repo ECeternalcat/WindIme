@@ -38,6 +38,8 @@ public class InputSettingsActivity extends BaseMenuActivity {
         final String capsSummary = prefs.getAutoCapitalize()
                 ? getString(R.string.value_on) : getString(R.string.value_off);
         final String mtapSummary = prefs.getMultiTapTimeout() + " ms";
+        final String fullscreenSummary = prefs.isFullscreenInputEnabled()
+                ? getString(R.string.value_on) : getString(R.string.value_off);
 
         String[] items = new String[] {
                 getString(R.string.input_default_ime),
@@ -45,6 +47,7 @@ public class InputSettingsActivity extends BaseMenuActivity {
                 getString(R.string.input_key_feedback) + ": " + feedbackSummary,
                 getString(R.string.input_auto_caps) + ": " + capsSummary,
                 getString(R.string.input_mtap_interval) + ": " + mtapSummary,
+                getString(R.string.input_fullscreen) + ": " + fullscreenSummary,
         };
         setMenuItems(items, new AdapterView.OnItemClickListener() {
             @Override
@@ -66,6 +69,10 @@ public class InputSettingsActivity extends BaseMenuActivity {
                         break;
                     case 4:
                         cycleMultiTapTimeout();
+                        rebuild();
+                        break;
+                    case 5:
+                        prefs.setFullscreenInputEnabled(!prefs.isFullscreenInputEnabled());
                         rebuild();
                         break;
                     default:

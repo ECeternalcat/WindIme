@@ -26,6 +26,7 @@ public final class GarahoPrefs {
     public static final String KEY_FEEDBACK = "key_feedback";
     public static final String KEY_SHOW_INDICATOR = "show_indicator";
     public static final String KEY_AUTO_CAPS = "auto_caps";
+    public static final String KEY_FULLSCREEN_INPUT = "fullscreen_input";
     public static final String KEY_MTAP_TIMEOUT = "mtap_timeout";
     public static final String KEY_ACTIVE_KEYMAP_SLOT = "active_keymap_slot";
     public static final String KEY_KEYMAP_LEGACY_MIGRATED = "keymap_legacy_migrated";
@@ -106,6 +107,15 @@ public final class GarahoPrefs {
 
     public void setAutoCapitalize(boolean value) {
         sp.edit().putBoolean(KEY_AUTO_CAPS, value).apply();
+    }
+
+    /** Full-screen extract input mode (InputMethodService fullscreen layout). */
+    public boolean isFullscreenInputEnabled() {
+        return sp.getBoolean(KEY_FULLSCREEN_INPUT, false);
+    }
+
+    public void setFullscreenInputEnabled(boolean value) {
+        sp.edit().putBoolean(KEY_FULLSCREEN_INPUT, value).apply();
     }
 
     public int getMultiTapTimeout() {

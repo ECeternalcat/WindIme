@@ -322,3 +322,28 @@ Tencent 后续建议作为联网下载的可选扩展词库：默认不加载、
 3. T9 移动读音需按 OK：根因在 `PinyinSession`——`processDigit` 仅在 `confirmed` 时锁定音节，手动 `preview` 选中的完整音节未被携带，下一数字重新分词又回到默认读音。新增 `completeSelectionPinned`：预览完整音节时置位，下一数字自动锁定；自动默认不锁定，故 `426→hao`、`64→ni` 等多字母单音节仍正常组合。
 
 三处仍需 701KC 真机验证：候选宽度比例与长词截断、绑定返回键在快捷菜单子页/主页的导航、连打 `96 24 64` 切读音的实际候选。
+
+## 17. 全屏输入模式与可校准的回车/关闭动作（2026-07-24）
+
+### 17.1 全屏输入模式（自绘，非原生提取）
+
+原生 `InputMethodService` 全屏提取模式（`onEvaluateFullscreenMode`）在 701KC 这类物理键翻盖机上不工作：强制开启后框架既不渲染候选栏、也不让 `onKeyDown` 消费按键（`inputViewActive` 未置真 → `InputEventGate` 拦截一切），表现为"输入法不出现、数字直上屏"。故改为自绘：开关开启时把输入视图本身做成全屏——`rootContainer` 白底 + `setMinimumHeight(屏高)`，顶部白色文本镜像区（显示 `光标前 │ 光标后`，由 `onStartInputView/onCommit/onUpdateSelection` 刷新），底部钉住既有候选栏。按键仍走 `onKeyDown`，T9/震动/菜单全不变；文本仍增量上屏。设置项 `fullscreen_input`，默认关。符号/快捷面板覆盖视图改为 `Gravity.BOTTOM`，全屏下落在候选栏位置。
+
+**修复**：开关切换后输入视图不重建导致"关不掉全屏"——`onCreateInputView` 只在进程启动时读一次设置。已抽出 `buildInputView()`，在 `onStartInputView` 检测到 `isFullscreenInputEnabled() != inputViewFullscreen` 时重建（重建时重置 `rootContainer` 的背景与 `minimumHeight`，并丢弃旧的面板实例）。
+
+### 17.2 可校准动作 ENTER / DISMISS_IME
+
+日系机 BACK 常作退格、OK 常作回车，两者都被占用，缺少"关闭输入法"和"纯换行"的途径。新增两个**可跳过**的校准动作：
+
+- `ENTER`（回车/换行）：若正在组词先提交首候选（不丢输入），再插入 `\n`。与 OK 区分（OK 触发编辑动作如发送/完成）。建议绑 `*`（701KC 丝印即回车）。
+- `DISMISS_IME`（关闭输入法）：先提交组词、reset 引擎、关面板，再 `requestHideSelf` 收起 IME/退出全屏，文本保留。
+
+`*`/`#` 在 `KeyMapper.isReservedFor` 本就允许重绑；用户把 `*` 绑到 `ENTER` 后 `resolve()` 用用户配置覆盖默认的 `INPUT_KEY_STAR`。未绑定时默认行为不变。校准向导 `STEPS` 末尾新增这两步（可跳过），输入态与模式条态都接。
+
+### 17.3 其它随附修复
+
+- 候选行改用 `HorizontalScrollView` + 单格 `WRAP_CONTENT` + `setMaxWidth(屏宽)`：所有长词/长句完整显示，仅单个超屏句在屏幕末端省略；◀▶ 移焦点后 `smoothScrollTo` 跟随；位置指示在实际可滚动时才显示。
+- 首次按键配置提示改用透明 `KeymapPromptActivity` 承载（原 `TYPE_SYSTEM_ALERT` 无 `SYSTEM_ALERT_WINDOW` 权限会 `BadTokenException`）。
+- 无 composing 时 ◀▶ 经 `sendDownUpKeyEvents(DPAD_LEFT/RIGHT)` 移动宿主光标；有 composing 时仍导航候选。
+
+仍需真机验证：全屏文本镜像同步、`DISMISS`/`ENTER` 绑定键的可用性、`sendDownUpKeyEvents` 在各宿主编辑框的光标移动效果。

@@ -57,8 +57,12 @@ public final class QuickMenuPanel {
             root = LayoutInflater.from(context).inflate(R.layout.view_quick_menu, parent, false);
             title = root.findViewById(R.id.quick_menu_title);
             list = root.findViewById(R.id.quick_menu_list);
-            parent.addView(root, new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            // Pin to the bottom so the menu sits over the candidate strip in
+            // fullscreen mode (rootContainer is full-screen there).
+            lp.gravity = Gravity.BOTTOM;
+            parent.addView(root, lp);
         }
         items = menuItems == null ? new String[0] : menuItems;
         checkedItems = checked != null && checked.length == items.length ? checked.clone() : null;

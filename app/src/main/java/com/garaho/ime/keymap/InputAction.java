@@ -35,6 +35,11 @@ public enum InputAction {
     CONFIRM_SELECTION,
     BACKSPACE_DELETE,
 
+    /** Pure newline / enter (for formatted text). Bindable e.g. to the '*' key. */
+    ENTER,
+    /** Hide the IME / exit fullscreen, keeping committed text. */
+    DISMISS_IME,
+
     NONE;
 
     public static InputAction safeValueOf(String name) {
