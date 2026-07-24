@@ -61,6 +61,18 @@ public final class SoftkeyGuideHelper {
      * @return {@code true} if the label was applied
      */
     public boolean setCenterLabel(Window window, CharSequence label) {
+        return setLabel(window, INDEX_CSK, label);
+    }
+
+    /**
+     * Set the label for any softkey index and refresh the guide.
+     *
+     * @param window the IME's Window
+     * @param index  one of {@link #INDEX_CSK}, {@link #INDEX_SK1}, {@link #INDEX_SK2}
+     * @param label  the label text, or empty/null to clear
+     * @return {@code true} if the label was applied
+     */
+    public boolean setLabel(Window window, int index, CharSequence label) {
         if (window == null) {
             return false;
         }
@@ -71,7 +83,38 @@ public final class SoftkeyGuideHelper {
                 return false;
             }
             guideClass.getMethod("setText", int.class, CharSequence.class)
-                    .invoke(guide, INDEX_CSK, label == null ? "" : label);
+                    .invoke(guide, index, label == null ? "" : label);
+            guideClass.getMethod("invalidate").invoke(guide);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * Set all three softkey labels in one call, with a single {@code invalidate()}.
+     * More efficient than three separate {@link #setLabel} calls.
+     *
+     * @param window the IME's Window
+     * @param sk1    left softkey label (null/empty to clear)
+     * @param sk2    right softkey label (null/empty to clear)
+     * @param csk    center softkey label (null/empty to clear)
+     * @return {@code true} if labels were applied
+     */
+    public boolean setAllLabels(Window window, CharSequence sk1, CharSequence sk2, CharSequence csk) {
+        if (window == null) {
+            return false;
+        }
+        try {
+            java.lang.reflect.Method get = guideClass.getMethod("getSoftkeyGuide", Window.class);
+            Object guide = get.invoke(null, window);
+            if (guide == null) {
+                return false;
+            }
+            java.lang.reflect.Method setText = guideClass.getMethod("setText", int.class, CharSequence.class);
+            setText.invoke(guide, INDEX_SK1, sk1 == null ? "" : sk1);
+            setText.invoke(guide, INDEX_SK2, sk2 == null ? "" : sk2);
+            setText.invoke(guide, INDEX_CSK, csk == null ? "" : csk);
             guideClass.getMethod("invalidate").invoke(guide);
             return true;
         } catch (Throwable t) {

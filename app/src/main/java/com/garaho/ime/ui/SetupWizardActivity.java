@@ -1,6 +1,7 @@
 package com.garaho.ime.ui;
 
 import com.garaho.ime.R;
+import com.garaho.ime.compat.SoftkeyGuideHelper;
 import com.garaho.ime.keymap.InputAction;
 import com.garaho.ime.keymap.KeyMapConfig;
 import com.garaho.ime.keymap.KeyMapper;
@@ -35,7 +36,8 @@ public class SetupWizardActivity extends Activity {
 
     private static final long BUZZ_MS = 50;
 
-    private static final InputAction[] STEPS = {
+    /** Core calibration steps present on all devices. */
+    private static final InputAction[] CORE_STEPS = {
             InputAction.TOGGLE_LANG_MODE,
             InputAction.SHOW_SYMBOL_PANEL,
             InputAction.SHOW_QUICK_MENU,
@@ -44,10 +46,17 @@ public class SetupWizardActivity extends Activity {
             InputAction.DISMISS_IME,
     };
 
+    /** Extra steps appended only on Kyocera devices with a Softkey Guide. */
+    private static final InputAction[] KYOCERA_STEPS = {
+            InputAction.SOFTKEY_LEFT,
+            InputAction.SOFTKEY_RIGHT,
+    };
+
     private TextView promptView;
     private TextView tipView;
     private TextView statusView;
     private int currentStep = 0;
+    private InputAction[] steps;
     private final Map<InputAction, KeyMapConfig.Mapping> captured = new LinkedHashMap<>();
     private final java.util.Set<InputAction> skipped = new java.util.LinkedHashSet<>();
     private Vibrator vibrator;
@@ -56,6 +65,7 @@ public class SetupWizardActivity extends Activity {
     private KeyMapConfig baseConfig;
     private int targetSlot;
     private boolean finished;
+    private boolean isKyocera;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -77,12 +87,37 @@ public class SetupWizardActivity extends Activity {
             finish();
             return;
         }
+        // Detect Kyocera vendor Softkey Guide; only those devices have the
+        // physical left/right soft keys below the screen that we can calibrate.
+        isKyocera = SoftkeyGuideHelper.create(this) != null;
+        steps = buildSteps();
         renderStep();
+    }
+
+    private InputAction[] buildSteps() {
+        if (!isKyocera) {
+            return CORE_STEPS;
+        }
+        // On Kyocera feature phones the left/right soft keys are fixed by the
+        // vendor framework (menu / symbol), and DISMISS_IME is handled by the
+        // native center-OK "完成" protocol. Skip those calibration steps and
+        // instead calibrate the physical SOFTKEY_LEFT / SOFTKEY_RIGHT.
+        java.util.ArrayList<InputAction> list = new java.util.ArrayList<>();
+        for (InputAction a : CORE_STEPS) {
+            if (a == InputAction.SHOW_QUICK_MENU || a == InputAction.DISMISS_IME) {
+                continue;
+            }
+            list.add(a);
+        }
+        for (InputAction a : KYOCERA_STEPS) {
+            list.add(a);
+        }
+        return list.toArray(new InputAction[0]);
     }
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (finished || currentStep >= STEPS.length) {
+        if (finished || currentStep >= steps.length) {
             return super.onKeyDown(keyCode, event);
         }
         if (event.getRepeatCount() > 0) {
@@ -103,7 +138,7 @@ public class SetupWizardActivity extends Activity {
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
             return true;
         }
-        InputAction target = STEPS[currentStep];
+        InputAction target = steps[currentStep];
         if (keyCode == KeyEvent.KEYCODE_BACK && target != InputAction.BACKSPACE_DELETE) {
             finish();
             return true;
@@ -127,7 +162,7 @@ public class SetupWizardActivity extends Activity {
     }
 
     private void skipCurrentStep() {
-        InputAction target = STEPS[currentStep];
+        InputAction target = steps[currentStep];
         captured.remove(target);
         skipped.add(target);
         advanceStep();
@@ -138,7 +173,7 @@ public class SetupWizardActivity extends Activity {
             return;
         }
         currentStep--;
-        InputAction target = STEPS[currentStep];
+        InputAction target = steps[currentStep];
         captured.remove(target);
         skipped.remove(target);
         renderStep();
@@ -146,7 +181,7 @@ public class SetupWizardActivity extends Activity {
 
     private void advanceStep() {
         currentStep++;
-        if (currentStep >= STEPS.length) {
+        if (currentStep >= steps.length) {
             finishWizard();
         } else {
             renderStep();
@@ -166,10 +201,10 @@ public class SetupWizardActivity extends Activity {
     }
 
     private void renderStep() {
-        if (currentStep >= STEPS.length) {
+        if (currentStep >= steps.length) {
             return;
         }
-        InputAction a = STEPS[currentStep];
+        InputAction a = steps[currentStep];
         promptView.setText(getString(R.string.wizard_target_format,
                 KeymapProfilesActivity.slotName(this, targetSlot),
                 getString(R.string.wizard_press_action_prompt, displayName(a))));
@@ -177,12 +212,16 @@ public class SetupWizardActivity extends Activity {
             tipView.setText(getString(R.string.wizard_controls) + "\n"
                     + getString(R.string.wizard_back_as_delete_tip));
             tipView.setVisibility(android.view.View.VISIBLE);
+        } else if (a == InputAction.SOFTKEY_LEFT || a == InputAction.SOFTKEY_RIGHT) {
+            tipView.setText(getString(R.string.wizard_controls) + "\n"
+                    + getString(R.string.wizard_softkey_tip));
+            tipView.setVisibility(android.view.View.VISIBLE);
         } else {
             tipView.setText(R.string.wizard_controls);
             tipView.setVisibility(android.view.View.VISIBLE);
         }
         StringBuilder sb = new StringBuilder();
-        sb.append(getString(R.string.wizard_step_format, currentStep + 1, STEPS.length)).append('\n');
+        sb.append(getString(R.string.wizard_step_format, currentStep + 1, steps.length)).append('\n');
         for (Map.Entry<InputAction, KeyMapConfig.Mapping> e : captured.entrySet()) {
             sb.append(displayName(e.getKey()))
               .append(" -> sc=").append(e.getValue().scanCode)
@@ -215,7 +254,7 @@ public class SetupWizardActivity extends Activity {
                 .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface dialog, int which) {
                         finished = false;
-                        currentStep = STEPS.length - 1;
+                        currentStep = steps.length - 1;
                         renderStep();
                     }
                 })
@@ -268,6 +307,8 @@ public class SetupWizardActivity extends Activity {
             case NAV_DOWN: return getString(R.string.action_nav_down);
             case NAV_LEFT: return getString(R.string.action_nav_left);
             case NAV_RIGHT: return getString(R.string.action_nav_right);
+            case SOFTKEY_LEFT: return getString(R.string.action_softkey_left);
+            case SOFTKEY_RIGHT: return getString(R.string.action_softkey_right);
             default: return a.name();
         }
     }

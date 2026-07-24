@@ -208,6 +208,13 @@ public final class KeyMapper {
         return false;
     }
 
+    /** Returns true if the active keymap has at least one key bound to the given action. */
+    public boolean hasActionBound(InputAction action) {
+        synchronized (this) {
+            return keyCodeMap.containsValue(action) || scanCodeMap.containsValue(action);
+        }
+    }
+
     static InputAction standardActionOf(int keyCode) {
         InputAction action = STANDARD_ANDROID.get(keyCode);
         return action == null ? InputAction.NONE : action;

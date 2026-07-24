@@ -922,6 +922,14 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 toggleQuickMenu();
                 return true;
 
+            case SOFTKEY_LEFT:
+                toggleQuickMenu();
+                return true;
+
+            case SOFTKEY_RIGHT:
+                showSymbolPanel();
+                return true;
+
             case SWITCH_RIME_SCHEMA:
                 return false;
 
@@ -959,6 +967,12 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 return true;
             case SHOW_QUICK_MENU:
                 toggleQuickMenu();
+                return true;
+            case SOFTKEY_LEFT:
+                toggleQuickMenu();
+                return true;
+            case SOFTKEY_RIGHT:
+                showSymbolPanel();
                 return true;
             case BACKSPACE_DELETE:
                 return deleteFromEditor();
@@ -1176,10 +1190,13 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     }
 
     /**
-     * Refresh the center Softkey Guide label on vendor devices: "完成" only while
-     * idle in the SoftBank Mail field; cleared otherwise so it never shows a stale
-     * "complete" label during composing / candidate / panel states. No-op on
-     * devices without the vendor Softkey Guide framework.
+     * Refresh the Softkey Guide labels on vendor (Kyocera) devices.
+     * <ul>
+     *   <li>SK1 (left): "菜单" if the user has bound SOFTKEY_LEFT, else empty.</li>
+     *   <li>SK2 (right): "符号" if the user has bound SOFTKEY_RIGHT, else empty.</li>
+     *   <li>CSK (center): "完成" only while idle in the SoftBank Mail field.</li>
+     * </ul>
+     * No-op on devices without the vendor Softkey Guide framework.
      */
     private void refreshSoftkeyGuide() {
         if (softkeyGuide == null) {
@@ -1187,13 +1204,23 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         }
         android.view.Window w = null;
         try {
-            // InputMethodService.getWindow() is the IME Dialog; its Window is what
-            // the vendor Softkey Guide is attached to (np701kc.md §5.1).
             w = getWindow().getWindow();
         } catch (Throwable ignored) {
         }
-        CharSequence label = isSoftkeyCompleteState() ? getString(R.string.softkey_complete) : "";
-        softkeyGuide.setCenterLabel(w, label);
+        CharSequence sk1 = hasSoftkeyLeftBinding() ? getString(R.string.softkey_menu) : "";
+        CharSequence sk2 = hasSoftkeyRightBinding() ? getString(R.string.softkey_symbol) : "";
+        CharSequence csk = isSoftkeyCompleteState() ? getString(R.string.softkey_complete) : "";
+        softkeyGuide.setAllLabels(w, sk1, sk2, csk);
+    }
+
+    /** True if the active keymap has a physical key bound to SOFTKEY_LEFT. */
+    private boolean hasSoftkeyLeftBinding() {
+        return keyMapper != null && keyMapper.hasActionBound(InputAction.SOFTKEY_LEFT);
+    }
+
+    /** True if the active keymap has a physical key bound to SOFTKEY_RIGHT. */
+    private boolean hasSoftkeyRightBinding() {
+        return keyMapper != null && keyMapper.hasActionBound(InputAction.SOFTKEY_RIGHT);
     }
 
     /** Delete one char (or the active selection) from the editor via the InputConnection. */

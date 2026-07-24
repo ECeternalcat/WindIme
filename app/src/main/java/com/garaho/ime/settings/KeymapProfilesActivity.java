@@ -157,6 +157,10 @@ public class KeymapProfilesActivity extends BaseMenuActivity {
         appendMapping(text, config, InputAction.SHOW_SYMBOL_PANEL, R.string.action_symbol_panel);
         appendMapping(text, config, InputAction.SHOW_QUICK_MENU, R.string.action_quick_menu);
         appendMapping(text, config, InputAction.BACKSPACE_DELETE, R.string.action_backspace);
+        appendMapping(text, config, InputAction.ENTER, R.string.action_enter);
+        appendMapping(text, config, InputAction.DISMISS_IME, R.string.action_dismiss);
+        appendMapping(text, config, InputAction.SOFTKEY_LEFT, R.string.action_softkey_left);
+        appendMapping(text, config, InputAction.SOFTKEY_RIGHT, R.string.action_softkey_right);
         new AlertDialog.Builder(this)
                 .setTitle(slotName(this, slot))
                 .setMessage(text.toString())
