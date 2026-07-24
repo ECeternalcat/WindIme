@@ -6,6 +6,7 @@ import android.util.AttributeSet;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -34,8 +35,10 @@ public class CandidateBar extends LinearLayout {
     private TextView backendStatus;
     private TextView positionIndicator;
     private ViewGroup pinyinRow;
+    private HorizontalScrollView candidateScroll;
     private ViewGroup candidateRow;
     private ViewGroup modeBar;
+    private View focusedCandidateView;
     private String[] candidates = new String[0];
     private String[] pinyinOptions = new String[0];
     private int candidateFocusIndex = 0;
@@ -62,6 +65,7 @@ public class CandidateBar extends LinearLayout {
         backendStatus = findViewById(R.id.backend_status);
         positionIndicator = findViewById(R.id.position_indicator);
         pinyinRow = findViewById(R.id.pinyin_row);
+        candidateScroll = findViewById(R.id.candidate_scroll);
         candidateRow = findViewById(R.id.candidate_row);
         modeBar = findViewById(R.id.mode_bar);
         renderHeader();
@@ -105,7 +109,7 @@ public class CandidateBar extends LinearLayout {
         modeBar.setVisibility(show ? View.VISIBLE : View.GONE);
         composingPreview.setVisibility(show ? View.GONE : View.VISIBLE);
         pinyinRow.setVisibility(!show && pinyinOptions.length > 0 ? View.VISIBLE : View.GONE);
-        candidateRow.setVisibility(show ? View.GONE : View.VISIBLE);
+        candidateScroll.setVisibility(show ? View.GONE : View.VISIBLE);
     }
 
     public void setModeLabel(String label) {
@@ -255,10 +259,14 @@ public class CandidateBar extends LinearLayout {
     private void render() {
         renderPinyinOptions();
         candidateRow.removeAllViews();
-        int window = gridExpanded ? INLINE_VISIBLE * INLINE_VISIBLE : INLINE_VISIBLE;
-        int start = visibleStart(candidateFocusIndex, candidates.length, window);
-        int end = Math.min(start + window, candidates.length);
-        for (int i = start; i < end; i++) {
+        focusedCandidateView = null;
+        int maxCellPx = maxCellWidthPx();
+        // Show every candidate at its natural width. Cells are wrapped in a
+        // HorizontalScrollView, so long lists scroll instead of being squeezed
+        // and ellipsized; each cell is capped to the screen width so a single
+        // over-long phrase ellipsizes at the screen edge rather than running
+        // off (improvement doc §3 / user report on "我爱你哦", "好家伙").
+        for (int i = 0; i < candidates.length; i++) {
             TextView tv = new TextView(getContext());
             String label = (i + 1) + "." + candidates[i];
             tv.setText(label);
@@ -268,6 +276,7 @@ public class CandidateBar extends LinearLayout {
             tv.setPadding(6, 8, 6, 8);
             tv.setTextSize(13);
             tv.setMinimumHeight(0);
+            tv.setMaxWidth(maxCellPx);
             if (i == candidateFocusIndex) {
                 tv.setBackgroundColor(activeLayer == InputLayer.CANDIDATE
                         ? Color.rgb(0x33, 0x66, 0x99)
@@ -276,43 +285,75 @@ public class CandidateBar extends LinearLayout {
                 tv.setTypeface(tv.getTypeface(), activeLayer == InputLayer.CANDIDATE
                         ? android.graphics.Typeface.BOLD
                         : android.graphics.Typeface.NORMAL);
+                focusedCandidateView = tv;
             } else {
                 tv.setBackgroundColor(Color.TRANSPARENT);
                 tv.setTextColor(Color.BLACK);
             }
-            // Width proportional to the item's text length so longer candidates
-            // get more space and are not clipped (fae0ae3), with ellipsis only
-            // as a last-resort safety net.
             LayoutParams lp = new LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, Math.max(1f, (float) label.length()));
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             candidateRow.addView(tv, lp);
         }
         updatePositionIndicator();
+        scrollToFocused();
         invalidate();
     }
 
+    /** Bring the focused candidate into view after the row is laid out. */
+    private void scrollToFocused() {
+        final View focus = focusedCandidateView;
+        if (focus == null || candidateScroll == null) {
+            return;
+        }
+        candidateScroll.post(new Runnable() {
+            @Override
+            public void run() {
+                int target = Math.max(0, focus.getLeft() - 2);
+                candidateScroll.smoothScrollTo(target, 0);
+            }
+        });
+    }
+
+    private int maxCellWidthPx() {
+        int sw = getContext().getResources().getDisplayMetrics().widthPixels;
+        return Math.max(40, sw - 8);
+    }
+
     /**
-     * Show a compact "{@code n/total}" position label for the active layer when
-     * its list spans more than one window (improvement doc §3). Hidden when
-     * everything fits or while the mode bar is up (lists are empty then).
+     * Show a compact position label. Pinyin uses a fixed-window threshold; the
+     * candidate row now scrolls horizontally and shows its "{@code n/total}"
+     * position only when it actually overflows (checked after layout).
      */
     private void updatePositionIndicator() {
-        String label = "";
-        int window = gridExpanded ? INLINE_VISIBLE * INLINE_VISIBLE : INLINE_VISIBLE;
+        if (positionIndicator == null) {
+            return;
+        }
+        final String pinyinLabel;
         if (activeLayer == InputLayer.PINYIN && pinyinOptions.length > PINYIN_VISIBLE) {
-            label = CandidatePagination.positionLabel(
+            pinyinLabel = CandidatePagination.positionLabel(
                     pinyinFocusIndex, pinyinOptions.length, PINYIN_VISIBLE);
-        } else if (activeLayer == InputLayer.CANDIDATE && candidates.length > window) {
-            label = CandidatePagination.positionLabel(
-                    candidateFocusIndex, candidates.length, window);
-        }
-        if (label.isEmpty()) {
-            positionIndicator.setText("");
-            positionIndicator.setVisibility(View.GONE);
         } else {
-            positionIndicator.setText(label);
-            positionIndicator.setVisibility(View.VISIBLE);
+            pinyinLabel = "";
         }
+        positionIndicator.post(new Runnable() {
+            @Override
+            public void run() {
+                String label = pinyinLabel;
+                if (label.isEmpty() && activeLayer == InputLayer.CANDIDATE
+                        && candidateScroll != null && candidates.length > 1
+                        && (candidateScroll.canScrollHorizontally(-1)
+                                || candidateScroll.canScrollHorizontally(1))) {
+                    label = (candidateFocusIndex + 1) + "/" + candidates.length;
+                }
+                if (label.isEmpty()) {
+                    positionIndicator.setText("");
+                    positionIndicator.setVisibility(View.GONE);
+                } else {
+                    positionIndicator.setText(label);
+                    positionIndicator.setVisibility(View.VISIBLE);
+                }
+            }
+        });
     }
 
     private void renderPinyinOptions() {

@@ -51,6 +51,12 @@
             android:label="@string/title_setup_wizard" />
 
         <activity
+            android:name=".settings.KeymapPromptActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/GarahoPromptTheme" />
+
+        <activity
             android:name=".settings.InputSettingsActivity"
             android:exported="false"
             android:label="@string/settings_input" />

@@ -89,6 +89,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private boolean showModeBar = true;
     private boolean inputSessionActive;
     private boolean inputViewActive;
+    private boolean keymapPromptShown;
     private String[] barLabels = null;
     private InputMode[] barModes = null;
     private int modeBarIndex = 0;
@@ -240,37 +241,20 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (prefs == null || keyMapper == null) {
             return;
         }
-        if (prefs.isKeymapPromptDismissed()) {
+        // Show at most once per process; the activity's buttons persist the
+        // "dismissed" flag so a "later"/"create" choice never re-prompts.
+        if (keymapPromptShown || prefs.isKeymapPromptDismissed()) {
             return;
         }
         if (keyMapper.hasAnyUserSlot()) {
             return;
         }
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle(R.string.keymap_prompt_title)
-                .setMessage(R.string.keymap_prompt_message)
-                .setPositiveButton(R.string.keymap_prompt_yes, new android.content.DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(android.content.DialogInterface d, int which) {
-                        prefs.setKeymapPromptDismissed(true);
-                        android.content.Intent intent = new android.content.Intent(
-                                GarahoImeService.this, SetupWizardActivity.class);
-                        intent.putExtra(SetupWizardActivity.EXTRA_TARGET_SLOT, KeymapSlots.USER_MIN);
-                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
-                        startActivity(intent);
-                    }
-                })
-                .setNegativeButton(R.string.keymap_prompt_no, new android.content.DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(android.content.DialogInterface d, int which) {
-                        prefs.setKeymapPromptDismissed(true);
-                    }
-                })
-                .create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_SYSTEM_ALERT);
-        }
-        dialog.show();
+        keymapPromptShown = true;
+        // Hosted by a transparent Activity: a service-shown dialog would need
+        // SYSTEM_ALERT_WINDOW (and crash with BadTokenException without it).
+        startActivity(new android.content.Intent(
+                this, com.garaho.ime.settings.KeymapPromptActivity.class)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
     }
 
     /**
