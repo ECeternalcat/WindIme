@@ -30,6 +30,7 @@ public final class GarahoPrefs {
     public static final String KEY_ACTIVE_KEYMAP_SLOT = "active_keymap_slot";
     public static final String KEY_KEYMAP_LEGACY_MIGRATED = "keymap_legacy_migrated";
     private static final String KEY_KEYMAP_SLOT_NAME_PREFIX = "keymap_slot_name_";
+    private static final String KEY_KEYMAP_PROMPT_DISMISSED = "keymap_prompt_dismissed";
 
     public static final String FEEDBACK_VIBRATE = "vibrate";
     public static final String FEEDBACK_SOUND = "sound";
@@ -142,6 +143,14 @@ public final class GarahoPrefs {
 
     public boolean markLegacyKeymapMigrated() {
         return sp.edit().putBoolean(KEY_KEYMAP_LEGACY_MIGRATED, true).commit();
+    }
+
+    public boolean isKeymapPromptDismissed() {
+        return sp.getBoolean(KEY_KEYMAP_PROMPT_DISMISSED, false);
+    }
+
+    public void setKeymapPromptDismissed(boolean dismissed) {
+        sp.edit().putBoolean(KEY_KEYMAP_PROMPT_DISMISSED, dismissed).apply();
     }
 
     /** Wipe every persisted preference, returning to compiled defaults. */

@@ -183,7 +183,7 @@
 
     <string name="rime_status_lightweight_short">轻量词库</string>
     <string name="rime_status_preparing_short">轻量·准备雾凇</string>
-    <string name="rime_status_ready_short">雾凇已就绪</string>
+    <string name="rime_status_ready_short">使用标准词库</string>
     <string name="rime_status_failed_short">轻量·雾凇失败</string>
     <string name="rime_status_title">当前状态</string>
     <string name="rime_data_version">数据版本</string>
@@ -201,4 +201,9 @@
     <string name="rime_clear_build_confirm">下次输入法服务启动时清理 Rime 编译缓存，不删除用户学习。继续？</string>
     <string name="rime_clear_learning_confirm">下次输入法服务启动时删除 Rime 用户学习数据。此操作不可恢复，继续？</string>
     <string name="rime_queued">已排队；应用进程重启或设备重启后安全执行</string>
+
+    <string name="keymap_prompt_title">按键配置</string>
+    <string name="keymap_prompt_message">尚未创建按键配置，是否现在创建？</string>
+    <string name="keymap_prompt_yes">创建</string>
+    <string name="keymap_prompt_no">以后再说</string>
 </resources>

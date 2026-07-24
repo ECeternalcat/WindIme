@@ -24,8 +24,10 @@ import com.garaho.ime.settings.KeymapProfilesActivity;
 import com.garaho.ime.ui.CandidateBar;
 import com.garaho.ime.ui.QuickMenuPanel;
 import com.garaho.ime.ui.SettingsActivity;
+import com.garaho.ime.ui.SetupWizardActivity;
 import com.garaho.ime.ui.SymbolPanel;
 
+import android.app.AlertDialog;
 import android.inputmethodservice.InputMethodService;
 import android.os.Handler;
 import android.os.Looper;
@@ -62,6 +64,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private static final long RIME_DEPLOY_TIMEOUT_MS = 30 * 60 * 1000L;
     private static final long RIME_RETRY_DELAY_MS = 3000L;
     private static final int RIME_MAX_RETRIES = 20;
+    private static final long READY_FLASH_MS = 500L;
     private static final int CAPITALIZE_LOOKBACK = 16;
     private static final String RIME_SCHEMA_ID = "rime_ice";
 
@@ -106,6 +109,14 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             InputMode.NUM,
     };
     private final Handler resetComboHandler = new Handler(Looper.getMainLooper());
+    private final Runnable hideBackendStatusRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (candidateBar != null) {
+                candidateBar.setBackendStatus(null);
+            }
+        }
+    };
     private final Runnable resetComboRunnable = new Runnable() {
         @Override
         public void run() {
@@ -125,7 +136,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         pinyinEngine = new T9PinyinEngine();
         Log.i(TAG, "Pinyin engine: built-in T9PinyinEngine (Rime preparing in background)");
         pinyinEngine.setListener(this);
-        setRimeStatus(RimeRuntimeStatus.State.PREPARING, "正在准备雾凇词库");
+        setRimeStatus(RimeRuntimeStatus.State.PREPARING, "正在准备标准词库");
 
         englishEngine = new EnglishT9Engine();
         englishEngine.setListener(this);
@@ -187,6 +198,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         inputViewActive = true;
         adoptReadyRimeEngine();
         enterModeBar();
+        if (!restarting) {
+            maybePromptKeymapSetup();
+        }
         Log.d(TAG, "onStartInputView restarting=" + restarting);
     }
 
@@ -215,6 +229,48 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         }
         Log.d(TAG, "onFinishInput");
         super.onFinishInput();
+    }
+
+    /**
+     * On the very first input session (user just enabled the IME and tapped an
+     * editor), prompt to create a keymap configuration if none exists yet.
+     * Conditions: no user slot configured AND prompt not previously dismissed.
+     */
+    private void maybePromptKeymapSetup() {
+        if (prefs == null || keyMapper == null) {
+            return;
+        }
+        if (prefs.isKeymapPromptDismissed()) {
+            return;
+        }
+        if (keyMapper.hasAnyUserSlot()) {
+            return;
+        }
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.keymap_prompt_title)
+                .setMessage(R.string.keymap_prompt_message)
+                .setPositiveButton(R.string.keymap_prompt_yes, new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface d, int which) {
+                        prefs.setKeymapPromptDismissed(true);
+                        android.content.Intent intent = new android.content.Intent(
+                                GarahoImeService.this, SetupWizardActivity.class);
+                        intent.putExtra(SetupWizardActivity.EXTRA_TARGET_SLOT, KeymapSlots.USER_MIN);
+                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(intent);
+                    }
+                })
+                .setNegativeButton(R.string.keymap_prompt_no, new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface d, int which) {
+                        prefs.setKeymapPromptDismissed(true);
+                    }
+                })
+                .create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_SYSTEM_ALERT);
+        }
+        dialog.show();
     }
 
     /**
@@ -305,7 +361,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                         }
                         self = selfRef.get();
                         if (self != null && !self.destroyed) {
-                            self.attachReadyRime(engine, userDict, sid, "雾凇已就绪（重新挂载）");
+                            self.attachReadyRime(engine, userDict, sid, "标准词库已就绪（重新挂载）");
                         }
                         return;
                     }
@@ -359,7 +415,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                     rlog(sid, "schema-ready", RIME_SCHEMA_ID);
                     self = selfRef.get();
                     if (self != null && !self.destroyed) {
-                        self.attachReadyRime(engine, userDict, sid, "雾凇词库已就绪");
+                        self.attachReadyRime(engine, userDict, sid, "标准词库已就绪");
                     }
                 } finally {
                     RimeLifecycle.endSession();
@@ -428,7 +484,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             pinyinEngine.reset();
         }
         pinyinEngine = ready;
-        setRimeStatus(RimeRuntimeStatus.State.READY, "雾凇词库已启用");
+        setRimeStatus(RimeRuntimeStatus.State.READY, "标准词库已启用");
         Log.i(TAG, "Pinyin engine -> native rime-ice");
     }
 
@@ -452,7 +508,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 candidateBar.setBackendStatus(getString(R.string.rime_status_preparing_short));
                 break;
             case READY:
-                candidateBar.setBackendStatus(getString(R.string.rime_status_ready_short));
+                // READY is shown as a brief flash when typing starts, not
+                // permanently. Hide the line here so it does not linger.
+                candidateBar.setBackendStatus(null);
                 break;
             case FAILED:
                 candidateBar.setBackendStatus(getString(R.string.rime_status_failed_short));
@@ -462,6 +520,22 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 candidateBar.setBackendStatus(getString(R.string.rime_status_lightweight_short));
                 break;
         }
+    }
+
+    /**
+     * Briefly flash "使用标准词库" for {@link #READY_FLASH_MS} when the user
+     * starts typing in a session where the native Rime engine is active.
+     */
+    private void flashReadyStatus() {
+        if (candidateBar == null) {
+            return;
+        }
+        if (RimeRuntimeStatus.get(this).state != RimeRuntimeStatus.State.READY) {
+            return;
+        }
+        resetComboHandler.removeCallbacks(hideBackendStatusRunnable);
+        candidateBar.setBackendStatus(getString(R.string.rime_status_ready_short));
+        resetComboHandler.postDelayed(hideBackendStatusRunnable, READY_FLASH_MS);
     }
 
     /** Mode label for the candidate strip, empty when the user hides the indicator. */
@@ -1090,6 +1164,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             return handleDigit(action);
         }
         exitModeBar();
+        flashReadyStatus();
         return handleDigit(action);
     }
 

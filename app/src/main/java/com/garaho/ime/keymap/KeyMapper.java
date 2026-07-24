@@ -198,6 +198,16 @@ public final class KeyMapper {
         return getActiveSlot() != KeymapSlots.FACTORY;
     }
 
+    /** Returns true if at least one user keymap slot (1-4) has a saved configuration. */
+    public boolean hasAnyUserSlot() {
+        for (int slot = KeymapSlots.USER_MIN; slot <= KeymapSlots.USER_MAX; slot++) {
+            if (isSlotConfigured(slot)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     static InputAction standardActionOf(int keyCode) {
         InputAction action = STANDARD_ANDROID.get(keyCode);
         return action == null ? InputAction.NONE : action;
