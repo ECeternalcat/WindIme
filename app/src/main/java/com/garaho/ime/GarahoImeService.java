@@ -1516,6 +1516,17 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (rootContainer == null) {
             return;
         }
+        // Toggle: press again to dismiss
+        if (symbolPanel != null && symbolPanel.isShowing()) {
+            symbolPanel.dismiss();
+            refreshSoftkeyGuide();
+            return;
+        }
+        // Exit mode bar so D-pad events are not visually ambiguous (the mode bar
+        // highlight would remain frozen while the symbol panel handles nav).
+        if (showModeBar) {
+            exitModeBar();
+        }
         if (symbolPanel == null) {
             symbolPanel = new SymbolPanel(this, new SymbolPanel.OnSymbolPicked() {
                 @Override

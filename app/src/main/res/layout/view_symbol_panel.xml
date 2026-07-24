@@ -5,23 +5,51 @@
     android:orientation="vertical"
     android:background="@color/symbol_bg">
 
-    <TextView
-        android:id="@+id/symbol_page_label"
+    <!-- Tab bar: 中 / EN / 颜 / α / 定型文 -->
+    <LinearLayout
+        android:id="@+id/symbol_tab_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="6dp"
-        android:singleLine="true"
-        android:ellipsize="end"
-        android:textSize="13sp"
-        android:textColor="@color/primary_text" />
+        android:orientation="horizontal"
+        android:padding="2dp" />
 
-    <GridView
-        android:id="@+id/symbol_grid"
+    <!-- Content area: GridView for symbols, ListView for kaomoji/phrases -->
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="160dp"
-        android:padding="4dp"
-        android:verticalSpacing="4dp"
-        android:horizontalSpacing="4dp"
-        android:stretchMode="columnWidth" />
+        android:layout_height="160dp">
+
+        <GridView
+            android:id="@+id/symbol_grid"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:padding="4dp"
+            android:verticalSpacing="4dp"
+            android:horizontalSpacing="4dp"
+            android:stretchMode="columnWidth"
+            android:focusable="false"
+            android:focusableInTouchMode="false"
+            android:descendantFocusability="blocksDescendants" />
+
+        <ListView
+            android:id="@+id/symbol_list"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:padding="4dp"
+            android:divider="@null"
+            android:dividerHeight="2dp"
+            android:focusable="false"
+            android:focusableInTouchMode="false"
+            android:descendantFocusability="blocksDescendants"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/symbol_empty_hint"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:textSize="13sp"
+            android:textColor="#FF888888"
+            android:visibility="gone" />
+    </FrameLayout>
 
 </LinearLayout>

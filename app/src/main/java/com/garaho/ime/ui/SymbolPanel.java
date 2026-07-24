@@ -2,14 +2,15 @@ package com.garaho.ime.ui;
 
 import android.content.Context;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
-import android.widget.FrameLayout;
 import android.widget.GridView;
 import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.TextView;
 
 import com.garaho.ime.R;
@@ -20,14 +21,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Symbol/phrase picker (design doc §4.2 + §2.4).
+ * Symbol/phrase picker with a top tab bar (中 / EN / 颜 / α / 定型文).
  *
- * <p>Implemented as a child overlay of the IME input view (a separate
- * WindowManager window does not reliably receive key events inside an IME).
- * The host {@code GarahoImeService} routes D-Pad / OK / BACK to
- * {@link #handleAction(InputAction)} while {@link #isShowing()} is true, making the panel
- * effectively modal. 符号 and 定型文 share the panel; UP past the first row
- * cycles the tab.
+ * <p>Navigation model (two focus layers):
+ * <ul>
+ *   <li><b>TAB layer</b> – LEFT/RIGHT switches tab, DOWN enters content, OK enters content.</li>
+ *   <li><b>CONTENT layer</b> – LEFT/RIGHT/UP/DOWN moves within the grid or list;
+ *       UP past the first row returns to the TAB layer; OK picks the item.</li>
+ * </ul>
+ *
+ * <p>Kaomoji and phrases use a single-column {@link ListView} (variable-width items);
+ * symbol tabs use a 4-column {@link GridView}.
  */
 public class SymbolPanel {
 
@@ -35,27 +39,72 @@ public class SymbolPanel {
         void onSymbolPicked(String symbol);
     }
 
-    private static final String[][] SYMBOL_PAGES = {
-            {",", ".", "?", "!", ";", ":", "\"", "'", "(", ")", "-", "~", "/", "\\"},
-            {"+", "-", "=", "*", "_", "#", "@", "&", "%", "$", "^", "`", "[", "]"},
-            {"\u3001", "\u3002", "\uff0c", "\uff1f", "\uff01", "\uff1b", "\uff1a", "\u201c",
-             "\u201d", "\u3010", "\u3011", "\uff08", "\uff09", "\u2014"},
+    // --- Tab definitions ---
+    private static final int TAB_CN = 0;
+    private static final int TAB_EN = 1;
+    private static final int TAB_KAO = 2;
+    private static final int TAB_GREEK = 3;
+    private static final int TAB_PHRASE = 4;
+    private static final int TAB_COUNT = 5;
+
+    private static final String[] TAB_LABELS = {"中", "EN", "颜", "α", "定型文"};
+
+    private static final int GRID_COLUMNS = 4;
+
+    // --- Symbol data ---
+    private static final String[] CN_SYMBOLS = {
+            "，", "。", "、", "！", "？", "；", "：", "\u201c",
+            "\u201d", "\u2018", "\u2019", "（", "）", "【", "】", "《",
+            "》", "〈", "〉", "〔", "〕", "—", "…", "·",
+            "／", "＼", "￥", "％", "＋", "－", "＝", "＊", "＃", "＠", "＆"
     };
 
-    private static final int TAB_SYMBOL = 0;
-    private static final int TAB_PHRASE = 1;
+    private static final String[] EN_SYMBOLS = {
+            ",", ".", "!", "?", ";", ":", "\"", "'",
+            "(", ")", "[", "]", "{", "}", "<", ">",
+            "-", "_", "/", "\\", "%", "\u2030", "+", "-",
+            "\u00d7", "\u00f7", "=", "\u2260", "*", "#", "@", "&",
+            "^", "~", "`", "|", "$", "\u20ac", "\u00a3", "\u00a5",
+            "\u2248", "\u00b1", "\u2264", "\u2265", "\u221e"
+    };
+
+    private static final String[] GREEK_SYMBOLS = {
+            "Α", "α", "Β", "β", "Γ", "γ", "Δ", "δ",
+            "Ε", "ε", "Ζ", "ζ", "Η", "η", "Θ", "θ",
+            "Ι", "ι", "Κ", "κ", "Λ", "λ", "Μ", "μ",
+            "Ν", "ν", "Ξ", "ξ", "Ο", "ο", "Π", "π",
+            "Ρ", "ρ", "Σ", "σ", "Τ", "τ", "Υ", "υ",
+            "Φ", "φ", "Χ", "χ", "Ψ", "ψ", "Ω", "ω"
+    };
+
+    private static final String[] KAOMOJI = {
+            "(´･ω･`)", "(`･ω･´)", "(｀-´)>", "(´；ω；`)",
+            "（　ﾟДﾟ）", "┐('～`；)┌", "（´∀｀）", "Σ(゜д゜;)",
+            "（・Ａ・）", "(￣ー￣)", "ヽ(ｏ`皿′ｏ)ﾉ", "m(_ _)m",
+            "(≧ロ≦)", "(ΘεΘ;)", "₍^. .^₎⟆", "(>_<) (>_<)>",
+            "(-_-)zzz", "(*￣m￣)", "ヽ（´ー｀）┌", "(╯°□°）╯︵ ┻━┻"
+    };
+
+    // --- Focus layers ---
+    private static final int LAYER_TAB = 0;
+    private static final int LAYER_CONTENT = 1;
 
     private final Context context;
     private final OnSymbolPicked callback;
+
     private ViewGroup parent;
     private View root;
+    private LinearLayout tabBar;
     private GridView grid;
-    private TextView pageTitle;
-    private int tab = TAB_SYMBOL;
-    private int page = 0;
-    private int focus = 0;
+    private ListView list;
+    private TextView emptyHint;
+
     private boolean showing;
     private boolean attached;
+
+    private int layer = LAYER_TAB;
+    private int tabIndex = TAB_CN;
+    private int contentFocus = 0;
     private List<String> phraseItems = new ArrayList<>();
 
     public SymbolPanel(Context context, OnSymbolPicked callback) {
@@ -74,22 +123,31 @@ public class SymbolPanel {
         this.parent = parent;
         if (!attached) {
             root = LayoutInflater.from(context).inflate(R.layout.view_symbol_panel, parent, false);
-            pageTitle = root.findViewById(R.id.symbol_page_label);
+            tabBar = root.findViewById(R.id.symbol_tab_bar);
             grid = root.findViewById(R.id.symbol_grid);
-            grid.setNumColumns(4);
+            list = root.findViewById(R.id.symbol_list);
+            emptyHint = root.findViewById(R.id.symbol_empty_hint);
+            grid.setNumColumns(GRID_COLUMNS);
+            grid.setFocusable(false);
+            grid.setFocusableInTouchMode(false);
+            grid.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+            list.setFocusable(false);
+            list.setFocusableInTouchMode(false);
+            list.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
             android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT);
-            // Pin to the bottom so the panel sits over the candidate strip in
-            // fullscreen mode (rootContainer is full-screen there).
             lp.gravity = Gravity.BOTTOM;
             parent.addView(root, lp);
             attached = true;
         }
         root.setVisibility(View.VISIBLE);
         root.bringToFront();
+        layer = LAYER_TAB;
+        tabIndex = TAB_CN;
+        contentFocus = 0;
         reloadPhrases();
-        renderTab();
+        render();
         parent.requestLayout();
         showing = true;
     }
@@ -107,35 +165,121 @@ public class SymbolPanel {
         }
     }
 
-    /** @return true if the action was consumed (the service treats the panel as modal). */
+    /** @return true if the action was consumed (the panel is modal). */
     public boolean handleAction(InputAction action) {
         switch (action) {
             case NAV_LEFT:
-                moveFocus(-1);
+                if (layer == LAYER_TAB) {
+                    switchTab(-1);
+                } else {
+                    moveContentFocus(-1);
+                }
                 return true;
             case NAV_RIGHT:
-                moveFocus(1);
+                if (layer == LAYER_TAB) {
+                    switchTab(1);
+                } else {
+                    moveContentFocus(1);
+                }
                 return true;
             case NAV_UP:
-                if (focus < 4) {
-                    cycleTab();
+                if (layer == LAYER_TAB) {
+                    switchTab(-1);
                 } else {
-                    moveFocus(-4);
+                    if (isListMode()) {
+                        if (contentFocus <= 0) {
+                            layer = LAYER_TAB;
+                            render();
+                        } else {
+                            moveContentFocus(-1);
+                        }
+                    } else {
+                        if (contentFocus < GRID_COLUMNS) {
+                            layer = LAYER_TAB;
+                            render();
+                        } else {
+                            moveContentFocus(-GRID_COLUMNS);
+                        }
+                    }
                 }
                 return true;
             case NAV_DOWN:
-                moveFocus(4);
-                return true;
-            case CONFIRM_SELECTION: {
-                String[] items = currentItems();
-                if (focus >= 0 && focus < items.length && callback != null) {
-                    callback.onSymbolPicked(items[focus]);
+                if (layer == LAYER_TAB) {
+                    enterContent();
+                } else {
+                    moveContentFocus(isListMode() ? 1 : GRID_COLUMNS);
                 }
-                dismiss();
                 return true;
-            }
+            case CONFIRM_SELECTION:
+                if (layer == LAYER_TAB) {
+                    enterContent();
+                } else {
+                    pickCurrent();
+                }
+                return true;
             default:
-                return true; // modal: swallow other keys while open
+                return true; // modal: swallow
+        }
+    }
+
+    // --- Navigation helpers ---
+
+    private void switchTab(int delta) {
+        int next = tabIndex + delta;
+        if (next < 0) next = TAB_COUNT - 1;
+        if (next >= TAB_COUNT) next = 0;
+        tabIndex = next;
+        contentFocus = 0;
+        render();
+    }
+
+    private void enterContent() {
+        String[] items = currentItems();
+        if (items.length == 0) {
+            return;
+        }
+        layer = LAYER_CONTENT;
+        contentFocus = 0;
+        render();
+    }
+
+    private void moveContentFocus(int delta) {
+        String[] items = currentItems();
+        if (items.length == 0) {
+            return;
+        }
+        int next = contentFocus + delta;
+        if (next < 0) next = 0;
+        if (next >= items.length) next = items.length - 1;
+        if (next == contentFocus) {
+            return;
+        }
+        contentFocus = next;
+        render();
+    }
+
+    private void pickCurrent() {
+        String[] items = currentItems();
+        if (contentFocus >= 0 && contentFocus < items.length && callback != null) {
+            callback.onSymbolPicked(items[contentFocus]);
+        }
+        dismiss();
+    }
+
+    // --- Data ---
+
+    private boolean isListMode() {
+        return tabIndex == TAB_KAO || tabIndex == TAB_PHRASE;
+    }
+
+    private String[] currentItems() {
+        switch (tabIndex) {
+            case TAB_CN: return CN_SYMBOLS;
+            case TAB_EN: return EN_SYMBOLS;
+            case TAB_KAO: return KAOMOJI;
+            case TAB_GREEK: return GREEK_SYMBOLS;
+            case TAB_PHRASE: return phraseItems.toArray(new String[0]);
+            default: return new String[0];
         }
     }
 
@@ -148,63 +292,69 @@ public class SymbolPanel {
         }
     }
 
-    private String[] currentItems() {
-        if (tab == TAB_PHRASE) {
-            return phraseItems.toArray(new String[0]);
-        }
-        return SYMBOL_PAGES[page];
+    // --- Rendering ---
+
+    private void render() {
+        renderTabBar();
+        renderContent();
     }
 
-    private void cycleTab() {
-        tab = (tab == TAB_SYMBOL) ? TAB_PHRASE : TAB_SYMBOL;
-        focus = 0;
-        page = 0;
-        if (tab == TAB_PHRASE) {
-            reloadPhrases();
+    private void renderTabBar() {
+        tabBar.removeAllViews();
+        for (int i = 0; i < TAB_COUNT; i++) {
+            TextView tv = new TextView(context);
+            tv.setText(TAB_LABELS[i]);
+            tv.setGravity(Gravity.CENTER);
+            tv.setSingleLine(true);
+            tv.setPadding(6, 8, 6, 8);
+            tv.setTextSize(13);
+            tv.setMinimumHeight(0);
+            if (layer == LAYER_TAB && i == tabIndex) {
+                tv.setBackgroundResource(R.drawable.list_focus_bg);
+                tv.setTextColor(Color.BLACK);
+                tv.setTypeface(tv.getTypeface(), Typeface.BOLD);
+            } else if (layer == LAYER_CONTENT && i == tabIndex) {
+                tv.setBackgroundColor(Color.TRANSPARENT);
+                tv.setTextColor(context.getResources().getColor(R.color.candidate_focus));
+                tv.setTypeface(tv.getTypeface(), Typeface.BOLD);
+            } else {
+                tv.setBackgroundColor(Color.TRANSPARENT);
+                tv.setTextColor(Color.BLACK);
+                tv.setTypeface(tv.getTypeface(), Typeface.NORMAL);
+            }
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            tabBar.addView(tv, lp);
         }
-        renderTab();
     }
 
-    private void moveFocus(int delta) {
+    private void renderContent() {
         String[] items = currentItems();
-        if (items.length == 0) {
-            return;
+        boolean listMode = isListMode();
+
+        grid.setVisibility(!listMode && items.length > 0 ? View.VISIBLE : View.GONE);
+        list.setVisibility(listMode && items.length > 0 ? View.VISIBLE : View.GONE);
+        boolean showEmpty = items.length == 0;
+        emptyHint.setVisibility(showEmpty ? View.VISIBLE : View.GONE);
+        if (showEmpty) {
+            emptyHint.setText(context.getString(R.string.symbol_phrase_empty));
         }
-        int next = focus + delta;
-        if (next < 0) {
-            next = 0;
+
+        if (listMode) {
+            renderList(items);
+        } else {
+            renderGrid(items);
         }
-        if (next >= items.length) {
-            next = items.length - 1;
-        }
-        if (next == focus) {
-            return;
-        }
-        focus = next;
-        renderTab();
     }
 
-    private void renderTab() {
-        pageTitle.setText(tab == TAB_SYMBOL
-                ? context.getString(R.string.symbol_tab_symbol)
-                : context.getString(R.string.symbol_tab_phrase));
-        final String[] items = currentItems();
-        final int focusRef = focus;
+    private void renderGrid(String[] items) {
+        final String[] data = items;
+        final int focusRef = contentFocus;
+        final boolean contentLayer = (layer == LAYER_CONTENT);
         grid.setAdapter(new BaseAdapter() {
-            @Override
-            public int getCount() {
-                return items.length;
-            }
-
-            @Override
-            public Object getItem(int position) {
-                return items[position];
-            }
-
-            @Override
-            public long getItemId(int position) {
-                return position;
-            }
+            @Override public int getCount() { return data.length; }
+            @Override public Object getItem(int p) { return data[p]; }
+            @Override public long getItemId(int p) { return p; }
 
             @Override
             public View getView(int position, View convertView, ViewGroup parentView) {
@@ -219,9 +369,9 @@ public class SymbolPanel {
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.WRAP_CONTENT));
                 }
-                tv.setText(items[position]);
+                tv.setText(data[position]);
                 tv.setTextSize(14);
-                if (position == focusRef) {
+                if (contentLayer && position == focusRef) {
                     tv.setBackgroundResource(R.drawable.list_focus_bg);
                     tv.setTextColor(Color.BLACK);
                 } else {
@@ -231,5 +381,41 @@ public class SymbolPanel {
                 return tv;
             }
         });
+        grid.setSelection(contentLayer ? focusRef : 0);
+    }
+
+    private void renderList(String[] items) {
+        final String[] data = items;
+        final int focusRef = contentFocus;
+        final boolean contentLayer = (layer == LAYER_CONTENT);
+        list.setAdapter(new BaseAdapter() {
+            @Override public int getCount() { return data.length; }
+            @Override public Object getItem(int p) { return data[p]; }
+            @Override public long getItemId(int p) { return p; }
+
+            @Override
+            public View getView(int position, View convertView, ViewGroup parentView) {
+                TextView tv;
+                if (convertView instanceof TextView) {
+                    tv = (TextView) convertView;
+                } else {
+                    tv = new TextView(context);
+                    tv.setGravity(Gravity.CENTER);
+                    tv.setPadding(20, 12, 20, 12);
+                    tv.setTextSize(14);
+                    tv.setSingleLine(false);
+                }
+                tv.setText(data[position]);
+                if (contentLayer && position == focusRef) {
+                    tv.setBackgroundResource(R.drawable.list_focus_bg);
+                    tv.setTextColor(Color.BLACK);
+                } else {
+                    tv.setBackgroundColor(Color.TRANSPARENT);
+                    tv.setTextColor(Color.BLACK);
+                }
+                return tv;
+            }
+        });
+        list.setSelection(contentLayer ? focusRef : 0);
     }
 }

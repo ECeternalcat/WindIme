@@ -57,6 +57,11 @@ public final class QuickMenuPanel {
             root = LayoutInflater.from(context).inflate(R.layout.view_quick_menu, parent, false);
             title = root.findViewById(R.id.quick_menu_title);
             list = root.findViewById(R.id.quick_menu_list);
+            // Prevent the ListView from stealing D-pad focus (same rationale as
+            // SymbolPanel: manual focus management in handleAction()).
+            list.setFocusable(false);
+            list.setFocusableInTouchMode(false);
+            list.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
             android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             // Pin to the bottom so the menu sits over the candidate strip in

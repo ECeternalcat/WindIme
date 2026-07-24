@@ -22,5 +22,8 @@
         android:choiceMode="none"
         android:drawSelectorOnTop="false"
         android:listSelector="@drawable/list_selector"
-        android:maxHeight="240dp" />
+        android:maxHeight="240dp"
+        android:focusable="false"
+        android:focusableInTouchMode="false"
+        android:descendantFocusability="blocksDescendants" />
 </LinearLayout>
