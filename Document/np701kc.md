@@ -486,7 +486,7 @@ inputConnection.performPrivateCommand("Finish_IME", bundle);
 
 也可以在中央 OK 的完成分支直接发送 `Finish_IME` 后隐藏 IME；Mail 当前 switch 不读取 Bundle 来选择 `g.a`，但携带 `isActiveFinish=true` 最符合 iWnn 协议。必须防止 `onFinishInputView()` 因普通焦点切换、IME 切换或 BACK 也误发 active finish，因此需要会话级布尔门控并在发送后清零。
 
-对当前系统 Mail，可以用 `privateImeOptions` 包含 `sbm_y_mail` 作为强兼容信号。为减少对未知应用的副作用，应将 `Finish_IME` 限制在该选项或经过验证的厂商应用，而不是对所有 Android 文本框无条件发送。
+对当前系统 Mail，可以用 `privateImeOptions` 包含 `sbm_y_mail` 作为确认宿主语义的强信号。但从完整 iWnn 生命周期看，`Start_IME`/`Finish_IME` 本身不是 Mail 专用命令：iWnn 会向几乎所有非空 `InputConnection` 发送，未知宿主自行忽略。需要限制的是 `isActiveFinish=true` 的触发条件，而不是按 Mail 包名限制 `Finish_IME` 字符串。
 
 ### 9.3 标准 editor action 与隐藏策略
 
@@ -613,3 +613,496 @@ ODEX 使用设备自带 `oatdump` 输出 DEX CODE 后，按上述类名、方法
 ```
 
 其中状态门控是实现正确性的关键：有组字、候选或面板时 OK 仍应由输入法内部消费；只有 iWnn 状态机所称的 active finish 状态，才显示“完成”并发出 `Finish_IME`。`IME_User_Action_CSKKey` 可以作为前置兼容通知保留，但它不是保存命令，也不能用 `handled=true` 判断成功。
+
+## 13. Browser 完成输入协议调查
+
+### 13.1 结论：不是按“系统软件”固定，而是按当前编辑控件分派
+
+701KC 上不同宿主、甚至同一个 Browser 内的不同输入控件，都可能采用不同完成协议：
+
+| 场景/控件 | `InputConnection`/接收器 | 完成机制 |
+|---|---|---|
+| Mail 正文 | `PreImeEditText` | 私有命令 `Finish_IME` |
+| Browser 主地址栏 | Android `TextView`/`UrlInputView` | 标准 `performEditorAction(IME_ACTION_GO)` |
+| Browser 网页内搜索/单行输入 | Chromium `ReplicaInputConnection` | 标准 `performEditorAction(IME_ACTION_SEARCH)`，内部合成 Enter |
+| Browser 的 `WebSearchEditText` | 自定义 `EditText.onPrivateIMECommand()` | 私有命令 `Finish_IME` |
+| Browser 设置中的 `HomePageEditText` | 自定义 `EditText.onPrivateIMECommand()` | 私有命令 `Finish_IME` |
+
+因此不能用包名 `com.android.browser` 选择唯一协议。IME 首先应读取当前 `EditorInfo` 的 action 和 flags，再只对明确带厂商信号的控件使用私有命令。
+
+### 13.2 当前 Browser 网页输入框实测
+
+设备停在 Browser 网页内输入框时，`adb shell dumpsys input_method` 显示：
+
+```text
+mServedView=com.android.browser.BrowserWebView
+mServedInputConnection=
+  org.chromium.content.browser.input.ReplicaInputConnection
+
+inputType=0x840a1
+imeOptions=0x12000003
+privateImeOptions=null
+packageName=com.android.browser
+fieldId=-1
+```
+
+正确拆解：
+
+```text
+0x00000003 = EditorInfo.IME_ACTION_SEARCH
+0x02000000 = EditorInfo.IME_FLAG_NO_FULLSCREEN
+0x10000000 = EditorInfo.IME_FLAG_NO_EXTRACT_UI
+```
+
+注意：`3` 是 `IME_ACTION_SEARCH`，不是 GO；`IME_ACTION_GO` 的值是 `2`。
+
+当前控件没有 `privateImeOptions`，也不是 Browser 自定义 `WebSearchEditText`，所以不应通过 `Finish_IME` 提交网页表单。正确调用是：
+
+```java
+inputConnection.performEditorAction(EditorInfo.IME_ACTION_SEARCH);
+```
+
+### 13.3 Chromium `ReplicaInputConnection.performEditorAction()`
+
+设备 System WebView 中的实现为：
+
+```java
+public boolean performEditorAction(int action) {
+    if (action != EditorInfo.IME_ACTION_GO) {
+        return mImeAdapter.performEditorAction(action);
+    }
+    mImeAdapter.hideKeyboard();
+    return false;
+}
+```
+
+其行为矩阵：
+
+| action | 数值 | Chromium 行为 |
+|---|---:|---|
+| `IME_ACTION_GO` | 2 | 只隐藏键盘并返回 `false`，不合成 Enter |
+| `IME_ACTION_SEARCH` | 3 | 合成 `KEYCODE_ENTER` DOWN/UP |
+| `IME_ACTION_NEXT` | 5 | 合成 `KEYCODE_TAB` DOWN/UP |
+| `IME_ACTION_DONE` | 6 | 合成 `KEYCODE_ENTER` DOWN/UP |
+| 其他 action | 其他 | 合成 `KEYCODE_ENTER` DOWN/UP |
+
+`ImeAdapter.performEditorAction(3)` 调用 `sendSyntheticKeyPress(KEYCODE_ENTER, 22)`。生成的两个事件参数为：
+
+```text
+ACTION_DOWN + KEYCODE_ENTER
+ACTION_UP   + KEYCODE_ENTER
+deviceId=-1
+scanCode=0
+repeatCount=0
+flags=22
+```
+
+`flags=22` 是：
+
+```text
+FLAG_SOFT_KEYBOARD | FLAG_KEEP_TOUCH_MODE | FLAG_EDITOR_ACTION
+```
+
+事件随后进入 Chromium native Web 输入事件。因此对当前 action 3，只调用一次 `performEditorAction(3)` 即可；不要再手工发送 Enter，否则可能提交两次。
+
+### 13.4 Chromium 对私有命令的处理
+
+`ReplicaInputConnection.performPrivateCommand()` 识别：
+
+- `Start_IME`
+- `android.inputmethodservice.InputMethodService.NOTIFY_IME_SHOWN`
+- `Finish_IME`
+- `android.inputmethodservice.InputMethodService.NOTIFY_IME_HIDE`
+- `android.inputmethodservice.InputMethodService.ACTION_REQ_KEY_SELECTMODE`
+- `android.inputmethodservice.InputMethodService.ACTION_REQ_KEY_ALLSELECTMODE`
+
+但网页控件收到 `Finish_IME` 时只执行：
+
+```text
+mImeAdapter.setImeStarted(false)
+恢复 BACK/DEL 键状态
+return true
+```
+
+它不会生成 Enter，也不会提交网页表单。因此 `Finish_IME handled=true` 在 Chromium 中同样不能解释为“搜索/提交成功”。它只是 IME 生命周期通知。
+
+### 13.5 Browser 主地址栏是另一条路径
+
+Browser 主地址栏布局中的 `UrlInputView` 配置为：
+
+```text
+android:singleLine=true
+android:inputType=0x11
+android:imeOptions=0x12000002
+```
+
+即标准 `IME_ACTION_GO (2)`。`UrlInputView` 在初始化时把自己注册为 `OnEditorActionListener`。它的 `onEditorAction()` 不检查 actionId 或 KeyEvent，只要收到 editor action 就执行：
+
+```text
+UrlInputView.onEditorAction()
+  -> finishInput(currentText, null, "browser-type")
+  -> dismissDropDown()
+  -> hideSoftInputFromWindow()
+  -> NavigationBarBase.onAction(...)
+  -> UrlUtils.smartUrlFilter(...)
+  -> UiController.loadUrl(...)
+```
+
+所以地址栏需要：
+
+```java
+inputConnection.performEditorAction(EditorInfo.IME_ACTION_GO);
+```
+
+地址栏不是 Chromium `ReplicaInputConnection`，因此不受网页控件“action 2 只隐藏键盘”的异常实现影响。它没有 `onPrivateIMECommand()`，发送 `Finish_IME` 不会导航。
+
+### 13.6 Browser 中确实也存在 `Finish_IME` 控件
+
+Browser APK 中有两个明确覆盖 `onPrivateIMECommand()` 的类：
+
+- `com.android.browser.WebSearchEditText`
+- `com.android.browser.preferences.HomePageEditText`
+
+两者都只检查字符串 `Finish_IME`，命中后调用已注册 listener 的 `onFinish()` 并返回 `true`。这进一步证明协议必须按控件判断：Browser 某些原生 EditText 需要 `Finish_IME`，主地址栏需要 GO，网页 WebView 输入框需要 SEARCH/DONE editor action。
+
+### 13.7 iWnn 对当前 Browser 网页输入框的行为
+
+对实测 `imeOptions=0x12000003`，iWnn 的：
+
+```text
+imeOptions & 0x400000ff = 3
+```
+
+中央 CSK 完成路径最终执行：
+
+```text
+requestActiveFinish()
+performPrivateCommand("IME_User_Action_CSKKey", null)
+inputConnection.performEditorAction(3)
+return
+```
+
+该分支不手工发送 `KEYCODE_ENTER`，也不立即调用 `requestHideSelf()`。Enter DOWN/UP 是 Chromium 在 `performEditorAction(3)` 内部生成的。
+
+`requestActiveFinish()` 虽然把 iWnn 的状态标为 active finish，但 action 分支自身没有关闭输入视图，因此不能假设每次都会立即触发 `onFinishInputView()` 和 `Finish_IME`。网页提交所依赖的确定动作仍是 `performEditorAction(3)`。
+
+### 13.8 WindIme 当前 Browser 失败的直接原因
+
+当前 WindIme 的空闲 `CONFIRM_SELECTION` 路由是：
+
+```text
+如果是 sbm_y_mail：发送 Finish_IME 并消费 OK
+否则：return false，把 DPAD_CENTER 交回宿主
+```
+
+Browser 网页输入框的 `ReplicaInputConnection` 需要 IME 主动调用 `performEditorAction(3)`；它不会把宿主收到的普通 `KEYCODE_DPAD_CENTER` 自动等价为 editor action。因此返回 `false` 不足以提交网页表单。
+
+只考虑该 Browser 网页字段时，合理分派顺序是：
+
+```text
+空闲中央 OK
+  1. 读取 imeOptions & IME_MASK_ACTION：
+       SEARCH(3) / DONE(6) / NEXT(5) / SEND(4) / GO(2)
+       -> inputConnection.performEditorAction(action)
+  2. 若 action 为 NONE/UNSPECIFIED：
+       再根据单行/多行和宿主兼容策略选择 Enter、隐藏或透传
+```
+
+对当前 Browser 网页字段，步骤 1 会调用 `performEditorAction(SEARCH)` 并成功让 Chromium 生成 Enter。跨应用的完整通用算法见第 14.7 节。
+
+### 13.9 Chromium action 2 的特殊风险
+
+当前 System WebView 的 `ReplicaInputConnection` 对 `IME_ACTION_GO (2)` 只隐藏键盘并返回 `false`。如果未来遇到网页内字段提供 action 2 且确实应提交，可以对以下条件做窄兼容：
+
+```text
+packageName=com.android.browser
+served connection 实际为 Chromium/WebView
+action=IME_ACTION_GO
+performEditorAction(2) 返回 false
+```
+
+fallback 才发送完整 Enter 对：
+
+```java
+inputConnection.sendKeyEvent(
+    new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
+inputConnection.sendKeyEvent(
+    new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER));
+```
+
+不能只发送 DOWN。也不应对 action 3/6 在 `performEditorAction()` 后再发 Enter，以免重复提交。由于标准 `InputConnection` API 不提供可靠的实现类查询，实际代码更稳妥的判断方式是“Browser/WebView 场景 + action 2 + `performEditorAction()` 返回 false”后才 fallback。
+
+### 13.10 Browser 逆向证据定位
+
+| 对象 | 证据 |
+|---|---|
+| 当前网页输入框 | `dumpsys input_method`：`BrowserWebView` + `ReplicaInputConnection` + `0x12000003` |
+| Chromium action 分派 | `ReplicaInputConnection.java:133` |
+| Chromium 合成 Enter/Tab | `ImeAdapter.java:217-233` |
+| Chromium private command | `ReplicaInputConnection.java:366-386` |
+| 地址栏提交 | `UrlInputView.onEditorAction()`，`dex_method_idx=6584` |
+| 地址栏导航 | `UrlInputView.finishInput()`，`dex_method_idx=6567` |
+| Browser 原生私有完成控件 | `WebSearchEditText.onPrivateIMECommand()`，`dex_method_idx=6652` |
+| Browser 设置私有完成控件 | `HomePageEditText.onPrivateIMECommand()`，`dex_method_idx=6961` |
+| iWnn Browser action 路径 | `IWnnImeJaJp.processImeHide()`，最终 `performEditorAction(3)` |
+
+## 14. Data Folder、Notepad 与通用完成算法
+
+### 14.1 最终答案：有通用状态机，没有单一通用命令
+
+701KC/iWnn 的通用性不在于始终发送某一个 action，而在于采用同一套分派状态机：
+
+```text
+输入视图开始：
+  performPrivateCommand("Start_IME", null)
+
+空闲中央 OK：
+  activeFinish = true
+  performPrivateCommand("IME_User_Action_CSKKey", null)
+
+  masked = imeOptions & 0x400000ff
+
+  如果 masked 是不带 NO_ENTER_ACTION 的裸 action 2..6：
+    performEditorAction(masked)
+  否则：
+    closing + requestHideSelf(0)
+
+输入视图结束：
+  performPrivateCommand(
+      "Finish_IME",
+      Bundle{"isActiveFinish": activeFinish})
+  activeFinish = false
+```
+
+不同宿主只处理其中与自己有关的一层：
+
+| 宿主/控件 | 真正产生完成的步骤 |
+|---|---|
+| MemoPad | `IME_User_Action_CSKKey` |
+| Mail 正文 | `Finish_IME(isActiveFinish=true)` |
+| Browser 网页输入框 | `performEditorAction(SEARCH/DONE)` |
+| Browser 地址栏 | `performEditorAction(GO)` |
+| Data Folder 重命名/新建/搜索 | 宿主收到物理右软键 `KEYCODE_F2(132)` |
+
+因此对中央 OK 可以实现一套接近 iWnn 的通用算法，不必按每个包硬编码；但 Data Folder 的 Done 属于右软键协议，不是中央 OK 完成协议，必须单独处理物理软键的归属。
+
+### 14.2 Notepad/MemoPad 当前 EditorInfo 实测
+
+设备停在 Notepad 编辑页时：
+
+```text
+mServedView=jp.kyocera.memo.common.CreateMemoEditText
+mServedInputConnection=com.android.internal.widget.EditableInputConnection
+
+inputType=0x24001
+imeOptions=0x40000006
+privateImeOptions=kc_memo_apps
+hintText=Notepad
+packageName=jp.kyocera.memo
+```
+
+拆解：
+
+```text
+0x06       = IME_ACTION_DONE
+0x40000000 = IME_FLAG_NO_ENTER_ACTION
+```
+
+`kc_memo_apps` 还是 iWnn `CommonImeOptionManager.MINIMUM_CHECK_APPS_LIST` 的成员。完整列表是：
+
+- `kc_kanji_apps`
+- `kc_sugumoji_apps`
+- `kc_memo_apps`
+
+这些值是 `privateImeOptions` 子串，不是包名。命中后 `isMinimumCheck=true`，iWnn 允许空闲中央键直接进入结束输入路径，不再要求编辑器内容为空。
+
+### 14.3 MemoPad 真正保存命令是 `CSKKey`
+
+`jp.kyocera.memo.common.CreateMemoEditText.onPrivateIMECommand()` 的完整映射：
+
+| action | 内部值 | 行为 |
+|---|---:|---|
+| `Start_IME` | 0 | 交给父类 |
+| `Finish_IME` | 1 | 交给父类，不保存 |
+| `IME_User_Action_BackKey` | 2 | 调 listener `ai()`，取消/放弃路径 |
+| `IME_User_Action_CSKKey` | 3 | 调 listener `ah()`，保存完成路径 |
+| `IME_User_Action_EditCancel` | 4 | 调 listener `aj()`，直接退出 |
+
+Activity 把自己注册为该 listener，因此：
+
+```text
+IME_User_Action_CSKKey
+  -> CreateMemoEditText.onPrivateIMECommand()
+  -> listener.ah()
+  -> CreateMemoActivity.ah()
+```
+
+`CreateMemoActivity.ah()` 的行为：
+
+1. 内容为空时直接退出
+2. 检查数据分区剩余空间
+3. 新备忘录执行数据库 insert，已有备忘录执行 update
+4. 显示保存成功提示
+5. 提示结束后设置 result 并 `finish()`
+
+MemoPad 没有应用级 `OnEditorActionListener`，所以虽然 `imeOptions` 低字节是 DONE，`performEditorAction(6)` 不会进入保存逻辑。普通 Enter 和 DPAD_CENTER 也没有自定义保存分支。
+
+这解释了当前 WindIme 的失败：非 Mail 空闲 OK 直接 `return false`，所以没有主动发送 MemoPad 唯一识别的 `IME_User_Action_CSKKey`。
+
+### 14.4 `NO_ENTER_ACTION` 为什么是通用分派关键
+
+iWnn 不是只读取 `imeOptions & IME_MASK_ACTION`，而是保留 `NO_ENTER_ACTION`：
+
+```java
+masked = imeOptions & 0x400000ff;
+```
+
+只有不带 flag 的裸值 2、3、4、5、6 进入 `performEditorAction()` 分支。
+
+以 MemoPad 为例：
+
+```text
+imeOptions = 0x40000006
+masked     = 0x40000006
+```
+
+它不等于裸 `6`，所以 iWnn 不调用 `performEditorAction(DONE)`，而是：
+
+```text
+requestActiveFinish()
+send IME_User_Action_CSKKey       // MemoPad 在这里保存
+closing + requestHideSelf(0)
+onFinishInputView()
+send Finish_IME(active=true)
+```
+
+Mail 当前字段同样是 action 6 + `NO_ENTER_ACTION`，但它忽略 CSKKey，改在最后的 `Finish_IME` 保存。正因为 iWnn 顺序发送两种通知，同一套算法才能兼容两者。
+
+### 14.5 Data Folder 的 Done 不是 IME Done
+
+Data Folder 的重命名、新建文件夹和搜索输入页具有以下共同点：
+
+- 普通 Android `EditText`
+- XML 没有有效 `imeOptions`，通常为 `IME_ACTION_UNSPECIFIED`
+- NP701KC 上 `privateImeOptions=null`
+- 没有 `onPrivateIMECommand()`
+- 没有业务 `OnEditorActionListener`
+- 不识别 `Finish_IME`、CSKKey、DONE editor action 或 Enter 作为确认
+
+它们显示的 Done/Search 是 Activity 的第二软键 SK2，而不是 IME 中央 action：
+
+```text
+SK1 = KEYCODE_F1 = 131
+SK2 = KEYCODE_F2 = 132
+```
+
+Data Folder 的相关页面都显式监听 `KEYCODE_F2(132)` 的 ACTION_UP：
+
+| 页面 | F2 行为 |
+|---|---|
+| `RenameFragment` | 校验名称，执行重命名，`setResult(RESULT_OK)` 后退出 |
+| `AddFolderActivity` | 校验名称，创建文件夹并返回结果 |
+| `SearchInputFragment` | 用关键词启动 `SearchActivity` |
+
+所以 Data Folder 的正确动作是让真实 F2 DOWN/UP 到达宿主，而不是把中央 OK 转成 `Finish_IME`。
+
+必要时等价事件为：
+
+```java
+inputConnection.sendKeyEvent(
+    new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_F2));
+inputConnection.sendKeyEvent(
+    new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_F2));
+```
+
+但如果用户本来按的就是物理 F2，更正确的策略是 IME 在空闲且没有内部面板时不要消费它，让原始事件自然返回宿主；不应无条件再合成一对 F2，以免重复执行。
+
+### 14.6 WindIme 与 Data Folder 的软键所有权冲突
+
+WindIme 当前把 `SOFTKEY_RIGHT` 绑定为显示符号面板：
+
+```text
+SOFTKEY_RIGHT -> showSymbolPanel() -> return true
+```
+
+Softkey Guide 也在存在该绑定时把 SK2 文案改成“符号”。这会覆盖 Data Folder 原本的 Done/Search 文案，并消费宿主所需的 F2。
+
+这不是中央完成算法能够修复的问题，而是“IME 内部快捷键”和“宿主 Activity 软键”的所有权冲突。建议原则：
+
+| IME 状态 | F1/F2 归属 |
+|---|---|
+| 正在组字、候选聚焦、符号/菜单面板打开 | IME 可以消费 |
+| 空闲且宿主窗口有自己的软键操作 | 返回 `false`，让 F1/F2 到宿主 |
+| 无法判断宿主是否需要软键 | 优先透传，内部符号/菜单使用其他明确绑定 |
+
+仅依据“用户把某键绑定为 SOFTKEY_RIGHT”就永久消费 F2，会导致 Data Folder 这类功能机原生应用无法 Done。
+
+### 14.7 推荐的通用中央 OK 算法
+
+综合 Mail、MemoPad 和 Browser，中央 OK 可以采用以下通用算法：
+
+```text
+handleIdleCenterOk():
+  ic = currentInputConnection
+  info = currentEditorInfo
+  if ic/info 为空：
+    return false
+
+  activeFinish = true
+
+  // 所有宿主都发送；未知宿主通常忽略。
+  ic.performPrivateCommand("IME_User_Action_CSKKey", null)
+
+  masked = info.imeOptions & 0x400000ff
+  if masked 是裸 GO/SEARCH/SEND/NEXT/DONE (2..6)：
+    handled = ic.performEditorAction(masked)
+    // Browser/WebView action 2 返回 false 的窄 fallback 另行处理。
+    return handled 或按兼容策略消费
+
+  requestHideSelf(0)
+  // onFinishInputView 中统一发送：
+  // Finish_IME { isActiveFinish: true }
+  return true
+```
+
+生命周期通知：
+
+```text
+onStartInputView:
+  performPrivateCommand("Start_IME", null)
+
+onFinishInputView:
+  performPrivateCommand(
+      "Finish_IME",
+      Bundle{"isActiveFinish": activeFinish})
+  activeFinish = false
+```
+
+这里 `Finish_IME` 不应只限定 `sbm_y_mail`。iWnn 对几乎所有非空 `InputConnection` 都发送 Start/Finish，普通结束使用 `isActiveFinish=false`，中央 OK 主动结束使用 `true`。未知宿主通常忽略该私有命令。
+
+### 14.8 必须与中央算法分离的 F1/F2 算法
+
+物理 F1/F2 应独立处理：
+
+```text
+如果 IME 当前有必须由软键操作的 modal 状态：
+  IME 消费 F1/F2
+否则：
+  return false，让宿主处理原始 F1/F2
+```
+
+不要把 Data Folder 的 F2 规则并入中央 OK；也不要在所有应用中把中央 OK 合成为 F2。F2 是宿主 Softkey Guide 的动作，中央 OK 是 CSK/editor action，两者在 701KC framework 中是不同通道。
+
+### 14.9 调查证据定位
+
+| 对象 | 证据 |
+|---|---|
+| MemoPad 当前 EditorInfo | `dumpsys input_method`：`0x40000006`、`kc_memo_apps` |
+| MemoPad 私有命令分派 | `CreateMemoEditText.onPrivateIMECommand()`，`dex_method_idx=2307` |
+| MemoPad 保存入口 | `CreateMemoActivity.ah()`，`dex_method_idx=1997` |
+| Data Folder 重命名 | `RenameFragment.onKeyUp(132)` |
+| Data Folder 新建文件夹 | `AddFolderActivity.onKeyUp(132)` |
+| Data Folder 搜索 | `SearchInputFragment.onKeyUp(132)` |
+| iWnn minimum list | `CommonImeOptionManager.<clinit>()` |
+| iWnn action/隐藏分派 | `IWnnImeJaJp.processImeHide()` |
+| iWnn 通用完成通知 | `IWnnLanguageSwitcher.onFinishInputView()` |

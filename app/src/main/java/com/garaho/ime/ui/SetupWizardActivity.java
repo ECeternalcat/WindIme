@@ -18,7 +18,9 @@ import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.EditText;
+import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -55,6 +57,8 @@ public class SetupWizardActivity extends Activity {
     private TextView promptView;
     private TextView tipView;
     private TextView statusView;
+    private View wizardPanel;
+    private ScrollView introScroll;
     private int currentStep = 0;
     private InputAction[] steps;
     private final Map<InputAction, KeyMapConfig.Mapping> captured = new LinkedHashMap<>();
@@ -66,6 +70,7 @@ public class SetupWizardActivity extends Activity {
     private int targetSlot;
     private boolean finished;
     private boolean isKyocera;
+    private boolean showingIntro = true;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -74,6 +79,8 @@ public class SetupWizardActivity extends Activity {
         promptView = findViewById(R.id.wizard_prompt);
         tipView = findViewById(R.id.wizard_tip);
         statusView = findViewById(R.id.wizard_status);
+        introScroll = findViewById(R.id.wizard_intro_scroll);
+        wizardPanel = findViewById(R.id.wizard_panel);
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
         keyMapper = new KeyMapper(this);
         prefs = new GarahoPrefs(this);
@@ -99,12 +106,15 @@ public class SetupWizardActivity extends Activity {
             return CORE_STEPS;
         }
         // On Kyocera feature phones the left/right soft keys are fixed by the
-        // vendor framework (menu / symbol), and DISMISS_IME is handled by the
-        // native center-OK "完成" protocol. Skip those calibration steps and
-        // instead calibrate the physical SOFTKEY_LEFT / SOFTKEY_RIGHT.
+        // vendor framework: left -> quick menu, right -> symbol panel, and
+        // DISMISS_IME is handled by the native center-OK "完成" protocol.
+        // Skip those calibration steps and instead calibrate the physical
+        // SOFTKEY_LEFT / SOFTKEY_RIGHT.
         java.util.ArrayList<InputAction> list = new java.util.ArrayList<>();
         for (InputAction a : CORE_STEPS) {
-            if (a == InputAction.SHOW_QUICK_MENU || a == InputAction.DISMISS_IME) {
+            if (a == InputAction.SHOW_QUICK_MENU
+                    || a == InputAction.SHOW_SYMBOL_PANEL
+                    || a == InputAction.DISMISS_IME) {
                 continue;
             }
             list.add(a);
@@ -117,6 +127,30 @@ public class SetupWizardActivity extends Activity {
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (showingIntro) {
+            if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+                    || keyCode == KeyEvent.KEYCODE_ENTER) {
+                if (introScroll.canScrollVertically(1)) {
+                    Toast.makeText(this, R.string.wizard_intro_read_all, Toast.LENGTH_SHORT).show();
+                } else {
+                    startWizard();
+                }
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                introScroll.smoothScrollBy(0, introScroll.getHeight() / 2);
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                introScroll.smoothScrollBy(0, -introScroll.getHeight() / 2);
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_BACK) {
+                finish();
+                return true;
+            }
+            return true;
+        }
         if (finished || currentStep >= steps.length) {
             return super.onKeyDown(keyCode, event);
         }
@@ -159,6 +193,13 @@ public class SetupWizardActivity extends Activity {
         buzz();
         advanceStep();
         return true;
+    }
+
+    private void startWizard() {
+        showingIntro = false;
+        introScroll.setVisibility(View.GONE);
+        wizardPanel.setVisibility(View.VISIBLE);
+        renderStep();
     }
 
     private void skipCurrentStep() {
@@ -205,23 +246,21 @@ public class SetupWizardActivity extends Activity {
             return;
         }
         InputAction a = steps[currentStep];
-        promptView.setText(getString(R.string.wizard_target_format,
-                KeymapProfilesActivity.slotName(this, targetSlot),
-                getString(R.string.wizard_press_action_prompt, displayName(a))));
+        String stepLine = getString(R.string.wizard_step_format, currentStep + 1, steps.length);
+        String actionLine = getString(R.string.wizard_press_action_prompt, displayName(a));
+        promptView.setText(stepLine + "\n" + actionLine);
+
         if (a == InputAction.BACKSPACE_DELETE) {
-            tipView.setText(getString(R.string.wizard_controls) + "\n"
-                    + getString(R.string.wizard_back_as_delete_tip));
-            tipView.setVisibility(android.view.View.VISIBLE);
+            tipView.setText(R.string.wizard_back_as_delete_tip);
+            tipView.setVisibility(View.VISIBLE);
         } else if (a == InputAction.SOFTKEY_LEFT || a == InputAction.SOFTKEY_RIGHT) {
-            tipView.setText(getString(R.string.wizard_controls) + "\n"
-                    + getString(R.string.wizard_softkey_tip));
-            tipView.setVisibility(android.view.View.VISIBLE);
+            tipView.setText(R.string.wizard_softkey_tip);
+            tipView.setVisibility(View.VISIBLE);
         } else {
-            tipView.setText(R.string.wizard_controls);
-            tipView.setVisibility(android.view.View.VISIBLE);
+            tipView.setVisibility(View.GONE);
         }
+
         StringBuilder sb = new StringBuilder();
-        sb.append(getString(R.string.wizard_step_format, currentStep + 1, steps.length)).append('\n');
         for (Map.Entry<InputAction, KeyMapConfig.Mapping> e : captured.entrySet()) {
             sb.append(displayName(e.getKey()))
               .append(" -> sc=").append(e.getValue().scanCode)

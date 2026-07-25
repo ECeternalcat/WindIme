@@ -17,14 +17,6 @@
         android:paddingTop="8dp"
         android:paddingBottom="8dp">
 
-        <ImageView
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:layout_marginEnd="10dp"
-            android:adjustViewBounds="true"
-            android:src="@mipmap/ic_launcher"
-            android:contentDescription="@string/app_name" />
-
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -32,8 +24,7 @@
             android:gravity="center_vertical"
             android:text="@string/title_setup_wizard"
             android:textColor="@color/candidate_focus_text"
-            android:textSize="18sp"
-            android:textStyle="bold" />
+            android:textSize="18sp" />
     </LinearLayout>
 
     <View
@@ -41,12 +32,48 @@
         android:layout_height="2dp"
         android:background="@color/brand_accent" />
 
+    <!-- Pre-calibration intro panel (scrollable; user must reach bottom to proceed). -->
+    <ScrollView
+        android:id="@+id/wizard_intro_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/wizard_intro_text"
+                android:textSize="15sp"
+                android:lineSpacingExtra="4dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="@string/wizard_intro_start"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@color/brand_primary_dark" />
+
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- Calibration wizard panel (hidden until the intro is dismissed). -->
     <LinearLayout
+        android:id="@+id/wizard_panel"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="16dp"
+        android:visibility="gone">
 
         <TextView
             android:id="@+id/wizard_prompt"

@@ -103,10 +103,18 @@ public final class QuickMenuPanel {
         }
         switch (action) {
             case NAV_UP:
-                setSelection(selectedIndex - 1);
+                if (selectedIndex <= 0) {
+                    setSelection(items.length - 1);
+                } else {
+                    setSelection(selectedIndex - 1);
+                }
                 return true;
             case NAV_DOWN:
-                setSelection(selectedIndex + 1);
+                if (selectedIndex >= items.length - 1) {
+                    setSelection(0);
+                } else {
+                    setSelection(selectedIndex + 1);
+                }
                 return true;
             case CONFIRM_SELECTION:
                 if (callback != null) {

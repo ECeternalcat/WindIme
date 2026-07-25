@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    InputMethod subtype declarations for Garaho T9 IME.
-    Doc 1.2: targets Chinese (T9 pinyin) and English (T9 ASCII) modes.
+    InputMethod subtype declaration for Garaho T9 IME.
+    WindIme handles Chinese / English / Multi-tap / Number modes
+    internally via the mode bar, so only a single zh_CN subtype is
+    declared for the system input-method selector.
 -->
 <input-method xmlns:android="http://schemas.android.com/apk/res/android"
     android:settingsActivity="com.garaho.ime.ui.SettingsActivity"
@@ -11,10 +13,5 @@
     <subtype
         android:label="@string/subtype_zh_CN"
         android:imeSubtypeLocale="zh_CN"
-        android:imeSubtypeMode="keyboard" />
-
-    <subtype
-        android:label="@string/subtype_en_US"
-        android:imeSubtypeLocale="en_US"
         android:imeSubtypeMode="keyboard" />
 </input-method>

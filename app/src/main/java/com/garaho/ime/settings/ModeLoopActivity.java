@@ -7,6 +7,8 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.os.Bundle;
+import android.view.KeyEvent;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
 
@@ -32,7 +34,6 @@ public class ModeLoopActivity extends Activity {
         setContentView(R.layout.activity_menu);
         prefs = new GarahoPrefs(this);
         ((android.widget.TextView) findViewById(R.id.menu_title)).setText(R.string.input_mode_loop);
-        ((android.widget.TextView) findViewById(R.id.menu_hint)).setText(R.string.menu_hint_toggle);
 
         allModes.add(InputMode.ZH);
         allModes.add(InputMode.ZH_MTAP);
@@ -51,6 +52,31 @@ public class ModeLoopActivity extends Activity {
         }
         list.setSelection(0);
         list.requestFocus();
+        list.setOnKeyListener(new android.view.View.OnKeyListener() {
+            @Override
+            public boolean onKey(android.view.View v, int keyCode, KeyEvent event) {
+                if (event.getAction() != KeyEvent.ACTION_DOWN) {
+                    return false;
+                }
+                int count = list.getCount();
+                if (count == 0) {
+                    return false;
+                }
+                int current = list.getSelectedItemPosition();
+                if (current == AdapterView.INVALID_POSITION) {
+                    return false;
+                }
+                if (keyCode == KeyEvent.KEYCODE_DPAD_UP && current == 0) {
+                    list.setSelection(count - 1);
+                    return true;
+                }
+                if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN && current == count - 1) {
+                    list.setSelection(0);
+                    return true;
+                }
+                return false;
+            }
+        });
         list.setOnItemClickListener(new android.widget.AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(android.widget.AdapterView<?> parent, android.view.View view, int position, long id) {
