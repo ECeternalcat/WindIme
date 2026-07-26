@@ -882,9 +882,9 @@ inputConnection.sendKeyEvent(
 | Mail 正文 | `Finish_IME(isActiveFinish=true)` |
 | Browser 网页输入框 | `performEditorAction(SEARCH/DONE)` |
 | Browser 地址栏 | `performEditorAction(GO)` |
-| Data Folder 重命名/新建/搜索 | 宿主收到物理右软键 `KEYCODE_F2(132)` |
+| Data Folder 重命名/新建/搜索 | `performEditorAction(DONE)`（裸 action 6，无 NO_ENTER_ACTION） |
 
-因此对中央 OK 可以实现一套接近 iWnn 的通用算法，不必按每个包硬编码；但 Data Folder 的 Done 属于右软键协议，不是中央 OK 完成协议，必须单独处理物理软键的归属。
+因此对中央 OK 可以实现一套接近 iWnn 的通用算法，不必按每个包硬编码。Data Folder 的 Done 在 iWnn 弹出时由中央 OK 通过标准 `performEditorAction(DONE)` 完成；物理 F2 仅在 iWnn 未弹出时由宿主直接使用。
 
 ### 14.2 Notepad/MemoPad 当前 EditorInfo 实测
 
@@ -978,46 +978,74 @@ send Finish_IME(active=true)
 
 Mail 当前字段同样是 action 6 + `NO_ENTER_ACTION`，但它忽略 CSKKey，改在最后的 `Finish_IME` 保存。正因为 iWnn 顺序发送两种通知，同一套算法才能兼容两者。
 
-### 14.5 Data Folder 的 Done 不是 IME Done
+### 14.5 Data Folder 的 Done 是标准 `performEditorAction(DONE)`（2026-07 实测修正）
 
-Data Folder 的重命名、新建文件夹和搜索输入页具有以下共同点：
+> **勘误**：本节原始结论（imeOptions=UNSPECIFIED、需要 F2）已被设备实测推翻。以下为修正后的内容。
 
-- 普通 Android `EditText`
-- XML 没有有效 `imeOptions`，通常为 `IME_ACTION_UNSPECIFIED`
-- NP701KC 上 `privateImeOptions=null`
-- 没有 `onPrivateIMECommand()`
-- 没有业务 `OnEditorActionListener`
-- 不识别 `Finish_IME`、CSKKey、DONE editor action 或 Enter 作为确认
+#### 14.5.1 实测 EditorInfo
 
-它们显示的 Done/Search 是 Activity 的第二软键 SK2，而不是 IME 中央 action：
+设备停在 Data Folder 重命名页（iWnn 已弹出）时，`adb shell dumpsys input_method` 显示：
 
 ```text
-SK1 = KEYCODE_F1 = 131
-SK2 = KEYCODE_F2 = 132
+mServedView=android.widget.EditText{... #7f0e0130 app:id/editName}
+mServedInputConnection=com.android.internal.widget.EditableInputConnection
+
+inputType=0x1
+imeOptions=0x6
+privateImeOptions=null
+hintText=Rename here
+packageName=jp.kyocera.datafolder
+fieldId=2131624240
+extras=Bundle[{maxLength=255}]
 ```
 
-Data Folder 的相关页面都显式监听 `KEYCODE_F2(132)` 的 ACTION_UP：
+拆解：
 
-| 页面 | F2 行为 |
-|---|---|
-| `RenameFragment` | 校验名称，执行重命名，`setResult(RESULT_OK)` 后退出 |
-| `AddFolderActivity` | 校验名称，创建文件夹并返回结果 |
-| `SearchInputFragment` | 用关键词启动 `SearchActivity` |
-
-所以 Data Folder 的正确动作是让真实 F2 DOWN/UP 到达宿主，而不是把中央 OK 转成 `Finish_IME`。
-
-必要时等价事件为：
-
-```java
-inputConnection.sendKeyEvent(
-    new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_F2));
-inputConnection.sendKeyEvent(
-    new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_F2));
+```text
+0x06 = IME_ACTION_DONE（裸值，无 NO_ENTER_ACTION，无任何高位 flag）
 ```
 
-但如果用户本来按的就是物理 F2，更正确的策略是 IME 在空闲且没有内部面板时不要消费它，让原始事件自然返回宿主；不应无条件再合成一对 F2，以免重复执行。
+#### 14.5.2 iWnn 的处理路径
 
-### 14.6 WindIme 与 Data Folder 的软键所有权冲突
+```text
+masked = imeOptions & 0x400000ff = 0x6（裸 DONE）
+→ 进入 "允许标准 editor action" 分支：
+  1. requestActiveFinish()
+  2. performPrivateCommand("IME_User_Action_CSKKey", null)  // Data Folder 忽略
+  3. ic.performEditorAction(6)                              // ← 真正触发 Done
+  return;
+```
+
+因为 `imeOptions=0x6 != 0`，`setSoftKey()` 不会 early return，iWnn 正常设置 Softkey Guide：
+- CSK（中央）= "完成"
+- SK2（右软键）= "Sym"（符号）
+
+#### 14.5.3 getevent 证实无 F2 合成
+
+在 Data Folder 中 iWnn 弹出状态下按中央 OK，`getevent -lt /dev/input/event1` 仅显示：
+
+```text
+EV_KEY  KEY_ENTER  DOWN
+EV_KEY  KEY_ENTER  UP
+```
+
+没有 `KEY_F2` 事件。物理中央键产生 `KEY_ENTER`，iWnn 拦截后走 `processImeHide()` → `performEditorAction(DONE)`，不合成 F2。
+
+#### 14.5.4 F2 的真实角色
+
+Data Folder 的 `RenameFragment`/`AddFolderActivity`/`SearchInputFragment` 确实监听 `KEYCODE_F2(132)` 的 ACTION_UP 来执行确认。但这是 **iWnn 未弹出时** 宿主直接使用右软键的路径。当 iWnn 弹出后：
+
+- iWnn 接管了右软键（SK2 显示 "Sym"），F2 被 iWnn 消费用于打开符号列表
+- 确认操作转移到中央 OK，通过标准 `performEditorAction(DONE)` 完成
+- Data Folder 的 EditText 或其框架层响应 `onEditorAction(IME_ACTION_DONE)` 执行与 F2 相同的确认逻辑
+
+#### 14.5.5 对 WindIme 的影响
+
+Data Folder 不需要特殊处理。通用中央 OK 算法（§14.7）中 `masked=6`（裸 DONE）分支的 `performEditorAction(6)` 即可覆盖。无需合成 F2，无需按包名硬编码。
+
+### 14.6 WindIme 与 Data Folder 的软键所有权（已修正）
+
+> **勘误**：原节认为 WindIme 消费 F2 会导致 Data Folder 无法 Done。实测表明 Data Folder 在 IME 弹出时通过 `performEditorAction(DONE)` 完成，不依赖 F2。因此软键冲突的严重性降低。
 
 WindIme 当前把 `SOFTKEY_RIGHT` 绑定为显示符号面板：
 
@@ -1025,17 +1053,15 @@ WindIme 当前把 `SOFTKEY_RIGHT` 绑定为显示符号面板：
 SOFTKEY_RIGHT -> showSymbolPanel() -> return true
 ```
 
-Softkey Guide 也在存在该绑定时把 SK2 文案改成“符号”。这会覆盖 Data Folder 原本的 Done/Search 文案，并消费宿主所需的 F2。
+这与 iWnn 的行为一致（iWnn 也把 SK2 绑定为 Sym）。Data Folder 在 IME 弹出时不再需要 F2 来 Done，所以 WindIme 消费 F2 打开符号面板是合理的。
 
-这不是中央完成算法能够修复的问题，而是“IME 内部快捷键”和“宿主 Activity 软键”的所有权冲突。建议原则：
+但 F1/F2 的归属原则仍然适用于其他可能依赖软键的宿主：
 
 | IME 状态 | F1/F2 归属 |
 |---|---|
 | 正在组字、候选聚焦、符号/菜单面板打开 | IME 可以消费 |
 | 空闲且宿主窗口有自己的软键操作 | 返回 `false`，让 F1/F2 到宿主 |
 | 无法判断宿主是否需要软键 | 优先透传，内部符号/菜单使用其他明确绑定 |
-
-仅依据“用户把某键绑定为 SOFTKEY_RIGHT”就永久消费 F2，会导致 Data Folder 这类功能机原生应用无法 Done。
 
 ### 14.7 推荐的通用中央 OK 算法
 
@@ -1100,9 +1126,85 @@ onFinishInputView:
 | MemoPad 当前 EditorInfo | `dumpsys input_method`：`0x40000006`、`kc_memo_apps` |
 | MemoPad 私有命令分派 | `CreateMemoEditText.onPrivateIMECommand()`，`dex_method_idx=2307` |
 | MemoPad 保存入口 | `CreateMemoActivity.ah()`，`dex_method_idx=1997` |
-| Data Folder 重命名 | `RenameFragment.onKeyUp(132)` |
-| Data Folder 新建文件夹 | `AddFolderActivity.onKeyUp(132)` |
-| Data Folder 搜索 | `SearchInputFragment.onKeyUp(132)` |
+| Data Folder 重命名 EditorInfo | `dumpsys input_method`：`imeOptions=0x6`（裸 DONE）、`privateImeOptions=null`、`app:id/editName`（2026-07 实测） |
+| Data Folder 中央 OK 事件流 | `getevent -lt`：仅 `KEY_ENTER DOWN/UP`，无 `KEY_F2`（2026-07 实测） |
+| Data Folder F2 监听（IME 未弹出时） | `RenameFragment.onKeyUp(132)`、`AddFolderActivity.onKeyUp(132)`、`SearchInputFragment.onKeyUp(132)` |
 | iWnn minimum list | `CommonImeOptionManager.<clinit>()` |
 | iWnn action/隐藏分派 | `IWnnImeJaJp.processImeHide()` |
 | iWnn 通用完成通知 | `IWnnLanguageSwitcher.onFinishInputView()` |
+
+## 15. Notepad 编辑区空白问题：必须使用厂商 fullscreen extract 视图
+
+### 15.1 现象
+
+在 701KC 的 Notepad（`jp.kyocera.memo` 的 `CreateMemoActivity`）正文编辑框中，使用 WindIme 输入时：
+
+- 输入视图弹出后，宿主 `EditText`（`app:id/Content_txt`，`CreateMemoEditText`）**不绘制**：无光标、无文本，整个文本区空白。
+- 输入本身正常：`commitText` 返回 `ok=true`，按"完成"（中央 OK → `IME_User_Action_CSKKey` → `CreateMemoActivity.ah()`）能正确保存内容。
+- 关闭输入法（或 `requestHideSelf`）后，宿主 `EditText` 立即恢复绘制，文本出现。
+- 系统 iWnn IME 在同一字段里**有**光标和文本，体验正常。
+
+即"看不到自己输入的内容"。早期曾怀疑是候选栏遮挡或 inline composing 缺失，但均不是根因。
+
+### 15.2 根因：framework 强制 extract 模式但 IME 未提供 extract 视图
+
+`adb shell dumpsys input_method` 关键字段：
+
+```text
+mFullscreenApplied=true mIsFullscreen=false mExtractViewHidden=false
+mExtractedText: null
+```
+
+- 该 Kyocera framework **无论 IME 是否请求 fullscreen，都把 `mFullscreenApplied` 置为 `true`**（即使竖屏、即使 `onEvaluateFullscreenMode()` 返回 `false`）。
+- `mFullscreenApplied=true` 时，framework 认为该字段应进入 **extract（全屏抽取）模式**：宿主 `EditText` 停止自绘，改由 IME 的 extract 视图（`ExtractEditText`）来显示字段文本。
+- iWnn 走原生 fullscreen extract 路径：framework 自动在其输入视图上方放置一个 `ExtractEditText`（真实可编辑、带光标、自动同步字段文本），下方是 iWnn 的候选栏 → 用户看到文本。
+- WindIme 早期实现为了"硬件键盘翻盖机原生 fullscreen 不显示候选栏、`onKeyDown` 不消费按键"的旧判断，**绕开了原生 extract**：`onCreateInputView` 直接返回一个紧凑候选栏（甚至自定义白色文字镜像）。framework 因此没有放置 `ExtractEditText`，`mExtractedText` 保持 `null`，宿主 `EditText` 又被停绘 → 文本区空白。
+
+实测推翻了那个旧判断：在本机上让 framework 走原生 fullscreen extract 后，候选栏照常显示、`onKeyDown` 照常消费按键、`commitText` 正常。旧判断不成立。
+
+### 15.3 诊断方法
+
+```powershell
+# 确认 extract 状态（重点看 mFullscreenApplied / mExtractedText）
+adb shell dumpsys input_method | findstr /i "Fullscreen Extract mWindowVisible"
+
+# 确认宿主 EditText 是否在视图树里（空白时 uiautomator 抓不到 EditText 节点）
+adb shell uiautomator dump /sdcard/ui.xml
+adb pull /sdcard/ui.xml
+
+# 确认 EditText 实际可见性与尺寸（dumpsys activity top 可见，uiautomator 不可见）
+adb shell "dumpsys activity top" | findstr /i "CreateMemoEditText"
+```
+
+典型证据：`dumpsys activity top` 显示 `CreateMemoEditText{... VED..CL ... 0,0-480,596}`（VISIBILE、已 layout），但 `uiautomator` 抓不到它，且截图近似纯色——视图在树里却不上屏。
+
+### 15.4 修复：`onEvaluateFullscreenMode()` 返回 `true`
+
+WindIme 端的最小修复：
+
+```java
+@Override
+public boolean onEvaluateFullscreenMode() {
+    return true;
+}
+```
+
+并让 `onCreateInputView` 返回**紧凑候选栏**（不要自定义白色镜像覆盖整屏）。这样 framework 会：
+
+1. 进入 fullscreen extract 模式；
+2. 在 WindIme 输入视图上方自动放置原生 `ExtractEditText`（真实可编辑、带光标、自动同步字段文本）；
+3. 把 WindIme 的候选栏钉在底部。
+
+效果与 iWnn **1:1 一致**：用户在编辑区看到带光标的真实文本，下方是候选栏，`commitText`/按键/完成保存全部正常。
+
+注意：`onEvaluateFullscreenMode()` 返回 `false` 在本机**不能**阻止 extract（`mFullscreenApplied` 仍为 `true`、宿主仍被停绘），只会让 framework 不放置 `ExtractEditText`，结果就是空白。因此对 701KC 这类机型，必须返回 `true`。
+
+### 15.5 证据定位
+
+| 对象 | 证据 |
+|---|---|
+| 宿主 EditText 状态 | `dumpsys activity top`：`CreateMemoEditText{... VED..CL ... 0,0-480,596 #7f0c0003 app:id/Content_txt}` |
+| extract 强制开启 | `dumpsys input_method`：`mFullscreenApplied=true mIsFullscreen=false mExtractedText: null` |
+| 视图树缺 EditText | `uiautomator dump`：仅 Toolbar/StatusBar，无 `CreateMemoEditText` 节点 |
+| 输入仍生效 | logcat：`commitText ok=true text="1"/"2"/"3"`，但无文本上屏 |
+| 修复验证 | `onEvaluateFullscreenMode()`→`true` + 紧凑候选栏后，编辑区 1:1 复刻 iWnn（2026-07 实测） |

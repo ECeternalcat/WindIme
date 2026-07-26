@@ -67,7 +67,6 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private static final int RIME_MAX_RETRIES = 20;
     private static final long READY_FLASH_MS = 500L;
     private static final int CAPITALIZE_LOOKBACK = 16;
-    private static final int FS_LOOKBACK = 200;
     private static final String RIME_SCHEMA_ID = "rime_ice";
 
     private KeyMapper keyMapper;
@@ -85,8 +84,6 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private InputMode mode = InputMode.ZH;
 
     private CandidateBar candidateBar;
-    private android.widget.TextView fullscreenText;
-    private boolean inputViewFullscreen;
     private SymbolPanel symbolPanel;
     private QuickMenuPanel quickMenuPanel;
     private FrameLayout rootContainer;
@@ -99,11 +96,23 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private InputMode[] barModes = null;
     private int modeBarIndex = 0;
     private CharSequence currentComposing = "";
+    /** True while an inline composing region is live in the host editor. */
+    private boolean inlineComposingSet;
+    /** Package name of the current host editor (set in onStartInput). */
+    private String currentHostPackage;
 
     private boolean backspaceHeld;
     private boolean poundHeld;
     private boolean consumeBoundBackKeyUp;
     private boolean consumeMenuKeyUp;
+    /**
+     * Session-level gate for the iWnn-compatible "active finish" protocol.
+     * Set to {@code true} when the user presses center OK to complete input;
+     * read and reset in {@link #onFinishInputView} to build the
+     * {@code Finish_IME} bundle. Prevents ordinary focus switches or BACK
+     * from accidentally sending {@code isActiveFinish=true}.
+     */
+    private boolean activeFinish;
     private boolean quickMenuShowingKeymaps;
     private boolean quickMenuShowingModes;
     private int[] quickMenuKeymapSlots = new int[0];
@@ -163,8 +172,22 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     }
 
     @Override
-    public View onCreateInputView() {
-        rootContainer = new FrameLayout(this);
+    public boolean onEvaluateFullscreenMode() {
+        // Only opt into the framework's fullscreen/extract layout for host
+        // packages whose own EditText the framework blanks in extract mode (so
+        // the native ExtractEditText is needed to show the text + cursor, like
+        // iWnn). For every other app, return false so its normal field stays
+        // visible and the user can move the cursor with the d-pad. The package
+        // list is user-configurable (设置 → 输入设定 → 全屏兼容列表);
+        // default = Notepad (np701kc.md §15).
+        if (currentHostPackage == null || prefs == null) {
+            return false;
+        }
+        return prefs.isFullscreenCompatPackage(currentHostPackage);
+    }
+
+    @Override
+    public View onCreateInputView() {        rootContainer = new FrameLayout(this);
         // The input view must not steal focus from the host editor - if it
         // does, getCurrentInputConnection() can go null and commits silently
         // drop. Keep it non-focusable; key events still arrive via onKeyDown.
@@ -175,10 +198,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     }
 
     /**
-     * (Re)build the input view for the current fullscreen setting. Called from
-     * {@link #onCreateInputView()} and again from {@link #onStartInputView}
-     * whenever the user toggles 全屏输入模式 in settings, so the change takes
-     * effect on the next focused field without restarting the IME process.
+     * (Re)build the compact candidate-strip input view. The framework wraps it
+     * below its native {@code ExtractEditText} when in fullscreen/extract mode
+     * (np701kc.md §15). Called from {@link #onCreateInputView()}.
      */
     private void buildInputView() {
         // Detach any modal panels first: their overlay views are children of
@@ -199,91 +221,18 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         candidateBar.setFocusableInTouchMode(false);
         candidateBar.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
 
-        boolean fullscreen = prefs != null && prefs.isFullscreenInputEnabled();
-        inputViewFullscreen = fullscreen;
-        if (fullscreen) {
-            // Native InputMethodService fullscreen-extract mode does not work
-            // on hardware-keyboard flip phones (the framework neither shows our
-            // candidate strip nor lets onKeyDown consume keys). Instead we make
-            // the normal input view itself cover the screen: a white text-mirror
-            // area on top with the existing candidate strip pinned at the bottom.
-            // Keys still route through onKeyDown, so T9 / feedback / menus work
-            // exactly as in compact mode.
-            rootContainer.setBackgroundColor(android.graphics.Color.WHITE);
-            rootContainer.setMinimumHeight(displayHeightPx());
-
-            android.widget.LinearLayout fs =
-                    new android.widget.LinearLayout(this);
-            fs.setOrientation(android.widget.LinearLayout.VERTICAL);
-            fs.setMinimumHeight(displayHeightPx());
-            fs.setLayoutParams(new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT));
-
-            fullscreenText = new android.widget.TextView(this);
-            fullscreenText.setTextColor(android.graphics.Color.BLACK);
-            fullscreenText.setBackgroundColor(android.graphics.Color.WHITE);
-            fullscreenText.setGravity(android.view.Gravity.TOP | android.view.Gravity.START);
-            fullscreenText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 18);
-            int pad = dp(12);
-            fullscreenText.setPadding(pad, pad, pad, pad);
-            fs.addView(fullscreenText, new android.widget.LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-
-            fs.addView(candidateBar, new android.widget.LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT));
-
-            rootContainer.addView(fs, new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT));
-        } else {
-            // Reset the fullscreen-only styling so the compact strip sizes
-            // itself to its content again.
-            rootContainer.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-            rootContainer.setMinimumHeight(0);
-            fullscreenText = null;
-            rootContainer.addView(candidateBar, new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT));
-        }
+        // Compact candidate strip only. The framework wraps this view below its
+        // native ExtractEditText when in fullscreen/extract mode (the editable
+        // field text + cursor), giving the iWnn-style behaviour. We never build
+        // a custom text mirror (np701kc.md §15).
+        rootContainer.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        rootContainer.setMinimumHeight(0);
+        rootContainer.addView(candidateBar, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
         candidateBar.setModeLabel(indicatorLabel());
         updateBackendStatus();
         enterModeBar();
-        refreshFullscreenText();
-    }
-
-    private int displayHeightPx() {
-        return getResources().getDisplayMetrics().heightPixels;
-    }
-
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
-    }
-
-    /**
-     * Mirror the host editor's committed text into the fullscreen white area
-     * (before-cursor | after-cursor). Composing preview is already shown on the
-     * candidate strip, so it is not duplicated here.
-     */
-    private void refreshFullscreenText() {
-        if (fullscreenText == null) {
-            return;
-        }
-        android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
-        StringBuilder sb = new StringBuilder();
-        if (ic != null) {
-            CharSequence before = ic.getTextBeforeCursor(FS_LOOKBACK, 0);
-            CharSequence after = ic.getTextAfterCursor(FS_LOOKBACK, 0);
-            if (before != null) {
-                sb.append(before);
-            }
-            sb.append('\u2502');
-            if (after != null) {
-                sb.append(after);
-            }
-        }
-        fullscreenText.setText(sb);
     }
 
     @Override
@@ -296,6 +245,10 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         inputSessionActive = true;
         inputViewActive = false;
         showModeBar = true;
+        currentHostPackage = attribute != null ? attribute.packageName : null;
+        if (prefs != null) {
+            prefs.setLastHostPackage(currentHostPackage);
+        }
         int actionId = attribute.imeOptions & 0x000000ff;
         Log.d(TAG, "onStartInput restarting=" + restarting
                 + " inputType=0x" + Integer.toHexString(attribute.inputType)
@@ -308,21 +261,23 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     @Override
     public void onStartInputView(android.view.inputmethod.EditorInfo info, boolean restarting) {
         super.onStartInputView(info, restarting);
-        // The input view is created once per process; rebuild it if the user
-        // toggled 全屏输入模式 in settings since it was last built.
-        if (rootContainer != null && prefs != null
-                && prefs.isFullscreenInputEnabled() != inputViewFullscreen) {
-            buildInputView();
-        }
         inputSessionActive = true;
         inputViewActive = true;
+        activeFinish = false;
         adoptReadyRimeEngine();
         enterModeBar();
         if (!restarting) {
             maybePromptKeymapSetup();
         }
-        refreshFullscreenText();
         refreshSoftkeyGuide();
+        // iWnn lifecycle notification: unknown hosts ignore this.
+        android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
+        if (ic != null) {
+            try {
+                ic.performPrivateCommand("Start_IME", null);
+            } catch (Throwable ignored) {
+            }
+        }
         Log.d(TAG, "onStartInputView restarting=" + restarting);
     }
 
@@ -331,13 +286,26 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             int candidatesStart, int candidatesEnd) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd,
                 candidatesStart, candidatesEnd);
-        // Cursor moved in the host editor: keep the fullscreen mirror in sync.
-        refreshFullscreenText();
+        // Cursor moved in the host editor; the native ExtractEditText mirrors it
+        // automatically, so nothing to do here.
     }
 
     @Override
     public void onFinishInputView(boolean finishingInput) {
         inputViewActive = false;
+        // iWnn lifecycle notification: send Finish_IME with the active-finish
+        // flag so vendor hosts (Mail, MemoPad, etc.) can distinguish a
+        // user-initiated center-OK completion from an ordinary focus switch.
+        android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
+        if (ic != null) {
+            try {
+                android.os.Bundle bundle = new android.os.Bundle();
+                bundle.putBoolean("isActiveFinish", activeFinish);
+                ic.performPrivateCommand("Finish_IME", bundle);
+            } catch (Throwable ignored) {
+            }
+        }
+        activeFinish = false;
         // Clear any vendor Softkey Guide label so it does not leak to the next window.
         if (softkeyGuide != null) {
             refreshSoftkeyGuide();
@@ -635,7 +603,14 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 break;
             case LIGHTWEIGHT:
             default:
-                candidateBar.setBackendStatus(getString(R.string.rime_status_lightweight_short));
+                // Hide the persistent engine-status line in the common case so
+                // the idle candidate strip stays a single row. On flip phones
+                // the IME input-view height becomes the host editor's bottom
+                // inset (np701kc.md: a 2-row strip inset 132px and hid the
+                // memo field's cursor/text, while the system iWnn IME's 1-row
+                // 72px strip left the field visible). Only surface the status
+                // for transient/error states that the user must see.
+                candidateBar.setBackendStatus(null);
                 break;
         }
     }
@@ -887,18 +862,10 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                     // the framework does not run Done in the middle of input.
                     return true;
                 }
-                // Idle. On the SoftBank Mail field the host finishes/saves via a
-                // vendor private IME command (IME_User_Action_CSKKey), not via the
-                // standard editor action and not via key pass-through (np701kc.md
-                // §6/§9). performPrivateCommand is a standard InputConnection API
-                // and unknown hosts ignore it, so it is safe but scoped to sbm_y_mail.
-                if (isSoftbankMailField()) {
-                    performSoftbankMailComplete();
-                    return true;
-                }
-                // Other idle fields: do NOT consume OK. Returning false lets the
-                // host / carrier framework run its native center-OK action.
-                return false;
+                // Idle: run the iWnn-compatible generic center-OK algorithm
+                // (np701kc.md §14.7). Covers Mail, MemoPad, Browser, Data Folder
+                // and standard Android editors without per-package hardcoding.
+                return handleIdleCenterOk();
 
             case BACKSPACE_DELETE:
                 return handleBackspace();
@@ -942,23 +909,18 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private boolean handleModeBarAction(InputAction action) {
         switch (action) {
             case NAV_LEFT:
-                moveModeBar(-1);
-                return true;
             case NAV_RIGHT:
-                moveModeBar(1);
-                return true;
-            case CONFIRM_SELECTION:
-                if (confirmModeBar()) {
-                    return true;
-                }
-                // Mode bar is up => composing empty (idle). On the SoftBank Mail
-                // field, send the vendor CSKKey complete command so the host
-                // saves/exits (np701kc.md). Other idle fields pass OK through.
-                if (isSoftbankMailField()) {
-                    performSoftbankMailComplete();
-                    return true;
-                }
+            case NAV_UP:
+            case NAV_DOWN:
+                // Idle (mode bar is only an indicator now): return direction
+                // keys to the system so they move the host editor's text cursor
+                // (the native ExtractEditText). Mode is switched solely via the
+                // TOGGLE_LANG_MODE key, never via direction keys (np701kc.md §15).
                 return false;
+            case CONFIRM_SELECTION:
+                // Mode bar is up => composing empty (idle). Run the generic
+                // center-OK algorithm (np701kc.md §14.7).
+                return handleIdleCenterOk();
             case TOGGLE_LANG_MODE:
                 advanceModeBarToNextInputMode();
                 return true;
@@ -1126,56 +1088,70 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         return true;
     }
 
-    // ---- SoftBank Mail vendor "complete" protocol (np701kc.md) ----
-
-    /** The host is the SoftBank Mail composer (privateImeOptions contains sbm_y_mail). */
-    private boolean isSoftbankMailField() {
-        android.view.inputmethod.EditorInfo ei = getCurrentInputEditorInfo();
-        return ei != null && ei.privateImeOptions != null
-                && ei.privateImeOptions.contains("sbm_y_mail");
-    }
+    // ---- iWnn-compatible generic center-OK protocol (np701kc.md §14.7) ----
 
     /**
-     * Send iWnn's private "center-softkey complete" command so the SoftBank Mail
-     * composer saves and exits, then also fire the field's standard editor
-     * action and hide the IME. Mirrors iWnn's processImeHide: the private CSKKey
-     * command is sent first, then (per the field's imeOptions) the standard
-     * editor action; the NO_ENTER_ACTION flag only affects the Enter *key*, not
-     * an explicit performEditorAction, so we still send it.
+     * Generic idle center-OK handler mirroring iWnn's {@code processImeHide()}.
+     *
+     * <ol>
+     *   <li>Marks this session as an "active finish" so {@link #onFinishInputView}
+     *       sends {@code Finish_IME} with {@code isActiveFinish=true}.</li>
+     *   <li>Sends {@code IME_User_Action_CSKKey} (harmless pre-notification;
+     *       MemoPad saves here, Mail ignores it).</li>
+     *   <li>If {@code imeOptions & 0x400000ff} is a bare action 2..6 (GO, SEARCH,
+     *       SEND, NEXT, DONE without {@code NO_ENTER_ACTION}), calls
+     *       {@code performEditorAction(masked)} — covers Browser, Data Folder,
+     *       and standard Android editors.</li>
+     *   <li>Otherwise (NO_ENTER_ACTION set, or action 0/1) hides the IME; the
+     *       resulting {@link #onFinishInputView} sends {@code Finish_IME} —
+     *       covers Mail and MemoPad.</li>
+     * </ol>
+     *
+     * @return {@code true} if the event was consumed
      */
-    /**
-     * Complete the SoftBank Mail composer: send the vendor "Finish_IME" private
-     * command that Mail maps to g.a -> pk.b() -> onBackPressed(), which reads
-     * the body, sets the result Intent and finishes the composer (saving and
-     * returning to the send page). The bundle carries isActiveFinish=true per
-     * the iWnn protocol (np701kc.md §6.4/§8.2). CSKKey is sent first as a
-     * harmless pre-notification (Mail maps it to a no-op g.h). performEditorAction
-     * is intentionally NOT used: the field carries IME_FLAG_NO_ENTER_ACTION and
-     * the save path is the vendor command, not the standard action.
-     */
-    private void performSoftbankMailComplete() {
+    private boolean handleIdleCenterOk() {
         android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
-        Log.d(TAG, "performSoftbankMailComplete ic=" + (ic != null));
-        if (ic != null) {
-            try {
-                ic.performPrivateCommand("IME_User_Action_CSKKey", null);
-            } catch (Throwable ignored) {
-            }
-            try {
-                android.os.Bundle bundle = new android.os.Bundle();
-                bundle.putBoolean("isActiveFinish", true);
-                ic.performPrivateCommand("Finish_IME", bundle);
-                Log.d(TAG, "Finish_IME sent");
-            } catch (Throwable t) {
-                Log.w(TAG, "Finish_IME failed: " + t);
-            }
+        android.view.inputmethod.EditorInfo info = getCurrentInputEditorInfo();
+        if (ic == null || info == null) {
+            return false;
         }
+
+        activeFinish = true;
+
+        // Pre-notification: all hosts receive this; unknown hosts ignore it.
+        try {
+            ic.performPrivateCommand("IME_User_Action_CSKKey", null);
+        } catch (Throwable ignored) {
+        }
+
+        // Preserve NO_ENTER_ACTION in the mask so we can distinguish bare actions.
+        int masked = info.imeOptions & 0x400000ff;
+        if (masked >= 2 && masked <= 6) {
+            // Bare GO/SEARCH/SEND/NEXT/DONE: standard editor action.
+            Log.d(TAG, "handleIdleCenterOk performEditorAction(" + masked + ")");
+            try {
+                ic.performEditorAction(masked);
+            } catch (Throwable t) {
+                Log.w(TAG, "performEditorAction failed: " + t);
+            }
+            return true;
+        }
+
+        // NO_ENTER_ACTION set, or action NONE/UNSPECIFIED: hide the IME.
+        // onFinishInputView will send Finish_IME { isActiveFinish: true }.
+        Log.d(TAG, "handleIdleCenterOk hide (masked=0x"
+                + Integer.toHexString(masked) + ")");
         inputViewActive = false;
         showModeBar = true;
         requestHideSelf(0);
+        return true;
     }
 
-    /** Idle (no composing, no modal panel) and on the SoftBank Mail field. */
+    /**
+     * Idle (no composing, no modal panel) and the current field has a
+     * meaningful center-OK action. Used to decide whether the Softkey Guide
+     * shows "完成" on the center key.
+     */
     private boolean isSoftkeyCompleteState() {
         if (currentComposing != null && currentComposing.length() > 0) {
             return false;
@@ -1186,7 +1162,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (quickMenuPanel != null && quickMenuPanel.isShowing()) {
             return false;
         }
-        return isSoftbankMailField();
+        // Show "完成" for any field: the generic algorithm always has a
+        // meaningful action (performEditorAction or hide+Finish_IME).
+        return getCurrentInputConnection() != null;
     }
 
     /**
@@ -1194,7 +1172,8 @@ public class GarahoImeService extends InputMethodService implements EngineListen
      * <ul>
      *   <li>SK1 (left): "菜单" if the user has bound SOFTKEY_LEFT, else empty.</li>
      *   <li>SK2 (right): "符号" if the user has bound SOFTKEY_RIGHT, else empty.</li>
-     *   <li>CSK (center): "完成" only while idle in the SoftBank Mail field.</li>
+     *   <li>CSK (center): "完成" while idle in any field (the generic center-OK
+     *       algorithm always has a meaningful action).</li>
      * </ul>
      * No-op on devices without the vendor Softkey Guide framework.
      */
@@ -1411,14 +1390,6 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         }
     }
 
-    private void moveModeBar(int delta) {
-        if (barLabels == null || barLabels.length == 0) {
-            return;
-        }
-        modeBarIndex = (modeBarIndex + delta + barLabels.length) % barLabels.length;
-        applyModeBarSelection();
-    }
-
     /** Cycling onto an input mode activates it immediately; 符 only highlights. */
     private void applyModeBarSelection() {
         InputMode m = (barModes != null && modeBarIndex < barModes.length) ? barModes[modeBarIndex] : null;
@@ -1433,17 +1404,6 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (candidateBar != null) {
             candidateBar.setModeBar(barLabels, modeBarIndex);
         }
-    }
-
-    private boolean confirmModeBar() {
-        if (barModes == null || modeBarIndex >= barModes.length) {
-            return false;
-        }
-        if (barModes[modeBarIndex] == null) {
-            showSymbolPanel();
-            return true;
-        }
-        return false;
     }
 
     /** Use the host field's DONE/NEXT/SEARCH action, otherwise insert a newline. */
@@ -1727,7 +1687,32 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (candidateBar != null) {
             candidateBar.setComposingText(composing);
         }
+        updateInlineComposing(composing);
         refreshSoftkeyGuide();
+    }
+
+    /**
+     * Push composing text into the host editor via {@code setComposingText},
+     * mirroring iWnn / standard Japanese-IME inline preview. Without this the
+     * editor stays blank while the user composes (the preview lived only in the
+     * candidate strip), so on flip phones the user could not see what they were
+     * typing (np701kc.md). The composing region is replaced by {@code commitText}
+     * when a candidate is confirmed, and removed if composing is cancelled.
+     */
+    private void updateInlineComposing(CharSequence composing) {
+        android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
+        if (ic == null) {
+            return;
+        }
+        if (composing != null && composing.length() > 0) {
+            ic.setComposingText(composing, 1);
+            inlineComposingSet = true;
+        } else if (inlineComposingSet) {
+            // Composing cleared without a commit (e.g. backspace / cancel):
+            // remove the inline composing region so no stale preview remains.
+            ic.commitText("", 0);
+            inlineComposingSet = false;
+        }
     }
 
     @Override
@@ -1758,7 +1743,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             text = maybeCapitalize(text);
         }
         commitTextToEditor(text);
-        refreshFullscreenText();
+        // commitText replaces the inline composing region; clear the flag so the
+        // ensuing onComposingChanged("") does not try to delete committed text.
+        inlineComposingSet = false;
     }
 
     /**

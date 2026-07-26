@@ -163,4 +163,9 @@ public class UserDictActivity extends BaseMenuActivity {
     protected int getTitleRes() {
         return R.string.settings_user_dict;
     }
+
+    @Override
+    protected int getHintRes() {
+        return R.string.menu_hint_nav;
+    }
 }

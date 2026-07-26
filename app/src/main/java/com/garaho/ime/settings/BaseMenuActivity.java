@@ -4,17 +4,14 @@ import com.garaho.ime.R;
 
 import android.app.Activity;
 import android.os.Bundle;
-import android.view.KeyEvent;
-import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
 import android.widget.TextView;
 
 /**
- * Base for 0-Touch settings pages (design doc §3): a title bar and a D-Pad
- * focusable {@link ListView} with a high-contrast selector. Navigation wraps
- * around (UP at the first item jumps to the last, DOWN at the last to first).
- * Subclasses populate the list.
+ * Base for 0-Touch settings pages (design doc §3): a bold title, a D-Pad
+ * focusable {@link ListView} with a high-contrast selector, and a fixed
+ * navigation hint footer. Subclasses populate the list.
  */
 public abstract class BaseMenuActivity extends Activity {
 
@@ -27,6 +24,8 @@ public abstract class BaseMenuActivity extends Activity {
         listView = findViewById(R.id.menu_list);
         TextView title = findViewById(R.id.menu_title);
         title.setText(getTitleRes());
+        TextView hint = findViewById(R.id.menu_hint);
+        hint.setText(getHintRes());
     }
 
     protected ListView getListView() {
@@ -37,31 +36,6 @@ public abstract class BaseMenuActivity extends Activity {
         ArrayAdapter<String> adapter = new ArrayAdapter<>(this, R.layout.list_item_menu, items);
         listView.setAdapter(adapter);
         listView.setOnItemClickListener(listener);
-        listView.setOnKeyListener(new android.view.View.OnKeyListener() {
-            @Override
-            public boolean onKey(android.view.View v, int keyCode, KeyEvent event) {
-                if (event.getAction() != KeyEvent.ACTION_DOWN) {
-                    return false;
-                }
-                int count = listView.getCount();
-                if (count == 0) {
-                    return false;
-                }
-                int current = listView.getSelectedItemPosition();
-                if (current == AdapterView.INVALID_POSITION) {
-                    return false;
-                }
-                if (keyCode == KeyEvent.KEYCODE_DPAD_UP && current == 0) {
-                    listView.setSelection(count - 1);
-                    return true;
-                }
-                if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN && current == count - 1) {
-                    listView.setSelection(0);
-                    return true;
-                }
-                return false;
-            }
-        });
         if (items.length > 0) {
             listView.setSelection(0);
             listView.requestFocus();
@@ -69,4 +43,8 @@ public abstract class BaseMenuActivity extends Activity {
     }
 
     protected abstract int getTitleRes();
+
+    protected int getHintRes() {
+        return R.string.menu_hint_nav;
+    }
 }

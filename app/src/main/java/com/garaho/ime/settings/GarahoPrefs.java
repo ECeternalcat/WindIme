@@ -26,12 +26,13 @@ public final class GarahoPrefs {
     public static final String KEY_FEEDBACK = "key_feedback";
     public static final String KEY_SHOW_INDICATOR = "show_indicator";
     public static final String KEY_AUTO_CAPS = "auto_caps";
-    public static final String KEY_FULLSCREEN_INPUT = "fullscreen_input";
     public static final String KEY_MTAP_TIMEOUT = "mtap_timeout";
     public static final String KEY_ACTIVE_KEYMAP_SLOT = "active_keymap_slot";
     public static final String KEY_KEYMAP_LEGACY_MIGRATED = "keymap_legacy_migrated";
     private static final String KEY_KEYMAP_SLOT_NAME_PREFIX = "keymap_slot_name_";
     private static final String KEY_KEYMAP_PROMPT_DISMISSED = "keymap_prompt_dismissed";
+    private static final String KEY_FULLSCREEN_COMPAT = "fullscreen_compat_packages";
+    private static final String KEY_LAST_HOST_PACKAGE = "last_host_package";
 
     public static final String FEEDBACK_VIBRATE = "vibrate";
     public static final String FEEDBACK_SOUND = "sound";
@@ -109,15 +110,6 @@ public final class GarahoPrefs {
         sp.edit().putBoolean(KEY_AUTO_CAPS, value).apply();
     }
 
-    /** Full-screen extract input mode (InputMethodService fullscreen layout). */
-    public boolean isFullscreenInputEnabled() {
-        return sp.getBoolean(KEY_FULLSCREEN_INPUT, false);
-    }
-
-    public void setFullscreenInputEnabled(boolean value) {
-        sp.edit().putBoolean(KEY_FULLSCREEN_INPUT, value).apply();
-    }
-
     public int getMultiTapTimeout() {
         return sp.getInt(KEY_MTAP_TIMEOUT, MTAP_TIMEOUT_DEFAULT);
     }
@@ -161,6 +153,42 @@ public final class GarahoPrefs {
 
     public void setKeymapPromptDismissed(boolean dismissed) {
         sp.edit().putBoolean(KEY_KEYMAP_PROMPT_DISMISSED, dismissed).apply();
+    }
+
+    /**
+     * Host packages for which the IME opts into the framework's fullscreen/
+     * extract layout (np701kc.md §15). Defaults to Notepad, whose editor the
+     * framework blanks in extract mode.
+     */
+    public Set<String> getFullscreenCompatPackages() {
+        Set<String> raw = sp.getStringSet(KEY_FULLSCREEN_COMPAT, null);
+        if (raw == null) {
+            // Defaults: Kyocera apps whose editor the framework blanks in
+            // extract mode (np701kc.md §15).
+            return new LinkedHashSet<>(Arrays.asList(
+                    "jp.kyocera.memo",
+                    "jp.kyocera.charactercheck"));
+        }
+        return new LinkedHashSet<>(raw);
+    }
+
+    public void setFullscreenCompatPackages(Set<String> packages) {
+        sp.edit().putStringSet(KEY_FULLSCREEN_COMPAT, packages).apply();
+    }
+
+    public boolean isFullscreenCompatPackage(String pkg) {
+        return pkg != null && getFullscreenCompatPackages().contains(pkg);
+    }
+
+    /** Most recent host editor package (updated by the IME on each onStartInput). */
+    public String getLastHostPackage() {
+        return sp.getString(KEY_LAST_HOST_PACKAGE, null);
+    }
+
+    public void setLastHostPackage(String pkg) {
+        if (pkg != null && !pkg.isEmpty()) {
+            sp.edit().putString(KEY_LAST_HOST_PACKAGE, pkg).apply();
+        }
     }
 
     /** Wipe every persisted preference, returning to compiled defaults. */

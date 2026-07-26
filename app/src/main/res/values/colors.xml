@@ -12,7 +12,7 @@
 
     <!-- Brand header bar -->
     <color name="brand_primary">#FF336699</color>
-    <color name="brand_primary_dark">#FF0055AA</color>
+    <color name="brand_primary_dark">#FF264A6E</color>
     <color name="brand_accent">#FF4A90C2</color>
 
     <!-- List focus (system-settings style: light fill + deeper thin border) -->

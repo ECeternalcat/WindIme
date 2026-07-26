@@ -15,7 +15,7 @@ import android.view.View;
 import android.widget.AdapterView;
 
 /**
- * Main settings menu (design doc §2). Seven categories, all reachable via
+ * Main settings menu (design doc §2). Five categories, all reachable via
  * D-Pad + OK. The system IME settings gear opens this activity directly;
  * the launcher icon first passes through {@link LauncherActivity}.
  */

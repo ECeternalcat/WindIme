@@ -38,20 +38,31 @@ public class InputSettingsActivity extends BaseMenuActivity {
         final String capsSummary = prefs.getAutoCapitalize()
                 ? getString(R.string.value_on) : getString(R.string.value_off);
         final String mtapSummary = prefs.getMultiTapTimeout() + " ms";
-        final String fullscreenSummary = prefs.isFullscreenInputEnabled()
-                ? getString(R.string.value_on) : getString(R.string.value_off);
 
-        String[] items = new String[] {
-                getString(R.string.input_default_ime),
-                getString(R.string.input_mode_loop) + ": " + modeSummary,
-                getString(R.string.input_key_feedback) + ": " + feedbackSummary,
-                getString(R.string.input_auto_caps) + ": " + capsSummary,
-                getString(R.string.input_mtap_interval) + ": " + mtapSummary,
-                getString(R.string.input_fullscreen) + ": " + fullscreenSummary,
-        };
-        setMenuItems(items, new AdapterView.OnItemClickListener() {
+        java.util.List<String> items = new java.util.ArrayList<>();
+        items.add(getString(R.string.input_default_ime));
+        items.add(getString(R.string.input_mode_loop) + ": " + modeSummary);
+        items.add(getString(R.string.input_key_feedback) + ": " + feedbackSummary);
+        items.add(getString(R.string.input_auto_caps) + ": " + capsSummary);
+        items.add(getString(R.string.input_mtap_interval) + ": " + mtapSummary);
+
+        // Kyocera-only fullscreen-extract compatibility list (np701kc.md §15).
+        // Shown only where the vendor Softkey Guide framework is present.
+        final int fullscreenPos;
+        if (com.garaho.ime.compat.SoftkeyGuideHelper.create(this) != null) {
+            fullscreenPos = items.size();
+            items.add(getString(R.string.input_fullscreen_compat));
+        } else {
+            fullscreenPos = -1;
+        }
+
+        setMenuItems(items.toArray(new String[0]), new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                if (position == fullscreenPos) {
+                    startActivity(new Intent(InputSettingsActivity.this, FullscreenCompatActivity.class));
+                    return;
+                }
                 switch (position) {
                     case 0:
                         startActivity(new Intent(InputSettingsActivity.this, ImeSetupActivity.class));
@@ -69,10 +80,6 @@ public class InputSettingsActivity extends BaseMenuActivity {
                         break;
                     case 4:
                         cycleMultiTapTimeout();
-                        rebuild();
-                        break;
-                    case 5:
-                        prefs.setFullscreenInputEnabled(!prefs.isFullscreenInputEnabled());
                         rebuild();
                         break;
                     default:
