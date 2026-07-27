@@ -11,7 +11,8 @@
     <subtype
         android:label="@string/subtype_zh_CN"
         android:imeSubtypeLocale="zh_CN"
-        android:imeSubtypeMode="keyboard" />
+        android:imeSubtypeMode="keyboard"
+        android:isDefault="true" />
 
     <subtype
         android:label="@string/subtype_en_US"

@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">WindIme</string>
+    <string name="app_name">Wind IME</string>
     <string name="title_setup_wizard">按键校准向导</string>
-    <string name="title_settings">WindIme 设置</string>
+    <string name="title_settings">Wind IME 设置</string>
 
-    <string name="subtype_zh_CN">中文 T9</string>
-    <string name="subtype_en_US">English T9</string>
+    <string name="subtype_zh_CN">中文/EN</string>
+    <string name="subtype_en_US">EN/中文</string>
 
     <string name="symbol_page_format">符号选择 [%1$d/%2$d 页]</string>
     <string name="symbol_phrase_empty">暂时没有文本，请到设置内添加</string>
-    <string name="quick_menu_title">WindIme 快捷菜单</string>
+    <string name="quick_menu_title">Wind IME 快捷菜单</string>
     <string name="quick_menu_keymap">映射配置</string>
     <string name="quick_menu_pick_ime">切换系统输入法</string>
     <string name="quick_menu_mode_loop">模式循环</string>
-    <string name="quick_menu_settings">WindIme 设置</string>
+    <string name="quick_menu_settings">Wind IME 设置</string>
     <string name="quick_menu_keymap_title">选择映射配置</string>
     <string name="wizard_press_action_prompt">请按下【%1$s】键</string>
     <string name="wizard_step_format">步骤 %1$d / %2$d</string>
@@ -37,7 +37,7 @@
     <string name="action_nav_left">向左</string>
     <string name="action_nav_right">向右</string>
 
-    <string name="btn_enable_ime">启用 WindIme</string>
+    <string name="btn_enable_ime">启用 Wind IME</string>
     <string name="btn_pick_ime">切换当前输入法</string>
     <string name="btn_start_wizard">开始按键校准</string>
 
@@ -50,18 +50,17 @@
     <string name="settings_phrase">定型文 / 常用短语</string>
     <string name="settings_reset">重置设置</string>
     <string name="settings_rime">Rime 词库与部署</string>
-    <string name="settings_about">关于 WindIme</string>
+    <string name="settings_about">关于 Wind IME</string>
 
-    <string name="about_title">关于 WindIme</string>
+    <string name="about_title">关于 Wind IME</string>
     <string name="about_free_notice">本项目使用GPL V3许可证开源，完全免费！禁止倒卖！</string>
     <string name="about_description">面向 Android 翻盖机、老人机和低配设备的实体键盘 T9 输入法。无需触摸屏，全部交互均可通过方向键和数字键完成。</string>
     <string name="about_version_format">版本：%1$s（%2$d）</string>
     <string name="about_copyright">Copyright © 2026 Eternalcat</string>
     <string name="about_source_code">项目源代码</string>
-    <string name="about_source_url">https://github.com/ECeternalcat/WindIme</string>
+    <string name="about_source_url">https://github.com/ECeternalcat/Wind IME</string>
     <string name="about_open_source_licenses">开源许可证</string>
-    <string name="about_hint">▲/▼ 移动焦点，OK 打开，BACK 返回</string>
-    <string name="license_windime">WindIme - GNU GPL v3</string>
+    <string name="license_windime">Wind IME - GNU GPL v3</string>
     <string name="license_rime">Rime / librime - BSD 3-Clause</string>
     <string name="license_trime">Trime - GNU GPL v3</string>
     <string name="license_rime_ice">rime-ice - GNU GPL v3</string>
@@ -77,8 +76,8 @@
     <string name="input_default_ime">设置默认输入法</string>
 
     <string name="ime_setup_title">设置默认输入法</string>
-    <string name="ime_setup_step1">启用 WindIme（系统输入法设置）</string>
-    <string name="ime_setup_step2">切换到 WindIme</string>
+    <string name="ime_setup_step1">启用 Wind IME（系统输入法设置）</string>
+    <string name="ime_setup_step2">切换到 Wind IME</string>
     <string name="ime_setup_done">已完成</string>
     <string name="ime_setup_pending">未完成</string>
     <string name="input_key_feedback">按键反馈</string>
