@@ -120,16 +120,10 @@ public class UserDictActivity extends BaseMenuActivity {
                     public void onClick(DialogInterface dialog, int which) {
                         String p = pinyinField.getText().toString().trim();
                         String w = wordField.getText().toString().trim();
-                        if (editing) {
-                            dict.remove(oldPinyin, oldWord);
-                        }
-                        StoreResult r = dict.add(p, w);
+                        StoreResult r = editing
+                                ? dict.update(oldPinyin, oldWord, p, w)
+                                : dict.add(p, w);
                         if (r != StoreResult.OK) {
-                            // Roll back the removal so a failed edit never loses
-                            // the original entry.
-                            if (editing) {
-                                dict.add(oldPinyin, oldWord);
-                            }
                             Toast.makeText(UserDictActivity.this, messageFor(r),
                                     Toast.LENGTH_SHORT).show();
                         }
@@ -140,7 +134,10 @@ public class UserDictActivity extends BaseMenuActivity {
             b.setNeutralButton(R.string.user_dict_delete, new DialogInterface.OnClickListener() {
                 @Override
                 public void onClick(DialogInterface dialog, int which) {
-                    dict.remove(oldPinyin, oldWord);
+                    if (!dict.remove(oldPinyin, oldWord)) {
+                        Toast.makeText(UserDictActivity.this, R.string.store_validation_io,
+                                Toast.LENGTH_SHORT).show();
+                    }
                 }
             });
         }

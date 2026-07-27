@@ -19,6 +19,8 @@ import android.widget.Toast;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Canned-phrase manager (design doc §2.4). D-Pad list of label/text entries
@@ -33,6 +35,9 @@ public class PhraseActivity extends BaseMenuActivity {
 
     private PhraseStore store;
     private List<PhraseStore.Entry> snapshot = new ArrayList<>();
+    private final ExecutorService importExecutor = Executors.newSingleThreadExecutor();
+    private boolean importing;
+    private volatile boolean destroyed;
 
     @Override
     protected void onCreate(android.os.Bundle savedInstanceState) {
@@ -68,6 +73,9 @@ public class PhraseActivity extends BaseMenuActivity {
         setMenuItems(items, new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                if (importing) {
+                    return;
+                }
                 if (position == 0) {
                     showPhraseDialog(-1, null);
                 } else if (position == snapshot.size() + 1) {
@@ -92,16 +100,48 @@ public class PhraseActivity extends BaseMenuActivity {
     }
 
     private void doImport() {
-        int added = store.importFrom(exportFile());
-        if (added < 0) {
-            Toast.makeText(this, R.string.store_import_failed, Toast.LENGTH_LONG).show();
-        } else if (added == 0) {
-            Toast.makeText(this, R.string.store_import_none, Toast.LENGTH_SHORT).show();
-        } else {
-            Toast.makeText(this, getString(R.string.store_import_success, added),
-                    Toast.LENGTH_SHORT).show();
+        if (importing) {
+            return;
         }
-        rebuild();
+        importing = true;
+        final File source = exportFile();
+        importExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                final int added = store.importFrom(source);
+                if (destroyed) {
+                    return;
+                }
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (destroyed || isFinishing()) {
+                            return;
+                        }
+                        importing = false;
+                        if (added < 0) {
+                            Toast.makeText(PhraseActivity.this, R.string.store_import_failed,
+                                    Toast.LENGTH_LONG).show();
+                        } else if (added == 0) {
+                            Toast.makeText(PhraseActivity.this, R.string.store_import_none,
+                                    Toast.LENGTH_SHORT).show();
+                        } else {
+                            Toast.makeText(PhraseActivity.this,
+                                    getString(R.string.store_import_success, added),
+                                    Toast.LENGTH_SHORT).show();
+                        }
+                        rebuild();
+                    }
+                });
+            }
+        });
+    }
+
+    @Override
+    protected void onDestroy() {
+        destroyed = true;
+        importExecutor.shutdownNow();
+        super.onDestroy();
     }
 
     private void showPhraseDialog(final int editIndex, final PhraseStore.Entry existing) {
@@ -149,7 +189,10 @@ public class PhraseActivity extends BaseMenuActivity {
             b.setNegativeButton(R.string.user_dict_delete, new DialogInterface.OnClickListener() {
                 @Override
                 public void onClick(DialogInterface dialog, int which) {
-                    store.remove(editIndex);
+                    if (!store.remove(editIndex)) {
+                        Toast.makeText(PhraseActivity.this, R.string.store_validation_io,
+                                Toast.LENGTH_SHORT).show();
+                    }
                 }
             });
         } else {
@@ -171,6 +214,7 @@ public class PhraseActivity extends BaseMenuActivity {
         switch (r) {
             case EMPTY: return R.string.store_validation_empty;
             case TOO_LONG: return R.string.store_validation_too_long;
+            case TOO_MANY: return R.string.store_validation_too_many;
             case DUPLICATE: return R.string.store_validation_duplicate;
             case IO_ERROR: return R.string.store_validation_io;
             default: return R.string.store_validation_io;

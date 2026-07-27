@@ -24,9 +24,6 @@ android {
         versionCode 21
         versionName "0.5.4"
 
-        // Direct boot aware for FDE/FBE devices (doc 5.1)
-        // Declared in manifest via android:directBootAware="true"
-
         // Prebuilt librime_jni.so ships only for armeabi-v7a (doc target
         // hardware: flip-phones). On other ABIs System.loadLibrary fails and
         // GarahoImeService falls back to the pure-Java T9PinyinEngine.
@@ -64,8 +61,11 @@ android {
     }
 
     lint {
-        abortOnError false
-        checkReleaseBuilds false
+        abortOnError true
+        checkReleaseBuilds true
+        // targetSdk migration needs vendor-device regression testing and is
+        // tracked as A-13 in the current audit. Keep all other lint errors fatal.
+        disable 'ExpiredTargetSdkVersion'
     }
 }
 

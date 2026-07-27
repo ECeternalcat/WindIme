@@ -4,13 +4,13 @@ import android.content.Context;
 import android.util.Log;
 
 import com.garaho.ime.settings.GarahoPrefs;
+import com.garaho.ime.user.AtomicStore;
 
 import org.json.JSONException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Collections;
@@ -149,18 +149,8 @@ public final class KeyMapper {
         try {
             String json = newConfig.toJson();
             File target = userSlotFile(slot);
-            File temp = new File(target.getParentFile(), target.getName() + ".tmp");
-            try (FileOutputStream out = new FileOutputStream(temp)) {
-                out.write(json.getBytes("UTF-8"));
-                out.getFD().sync();
-            }
-            KeyMapConfig.fromJson(readFully(new FileInputStream(temp)));
-            if (target.exists() && !target.delete()) {
-                return false;
-            }
-            if (!temp.renameTo(target)) {
-                return false;
-            }
+            KeyMapConfig.fromJson(json);
+            AtomicStore.writeAtomic(target, json.getBytes("UTF-8"));
             if (getActiveSlot() == slot) {
                 reload();
             }
@@ -247,14 +237,21 @@ public final class KeyMapper {
 
     private KeyMapConfig loadUserSlot(int slot) {
         File file = userSlotFile(slot);
+        try {
+            return loadUserFile(file);
+        } catch (IOException | JSONException e) {
+            Log.w(TAG, "User keymap slot unreadable: " + slot, e);
+            return null;
+        }
+    }
+
+    static KeyMapConfig loadUserFile(File file) throws IOException, JSONException {
+        AtomicStore.recover(file);
         if (!file.exists()) {
             return null;
         }
         try (InputStream input = new FileInputStream(file)) {
             return KeyMapConfig.fromJson(readFully(input));
-        } catch (IOException | JSONException e) {
-            Log.w(TAG, "User keymap slot unreadable: " + slot, e);
-            return null;
         }
     }
 
@@ -267,7 +264,14 @@ public final class KeyMapper {
             return;
         }
         File legacy = new File(context.getFilesDir(), USER_KEYMAP_FILE);
-        if (!legacy.exists() || userSlotFile(1).exists()) {
+        File firstSlot = userSlotFile(1);
+        try {
+            AtomicStore.recover(firstSlot);
+        } catch (IOException e) {
+            Log.w(TAG, "Cannot recover keymap slot 1 before migration", e);
+            return;
+        }
+        if (!legacy.exists() || firstSlot.exists()) {
             prefs.markLegacyKeymapMigrated();
             return;
         }

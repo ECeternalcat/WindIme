@@ -91,13 +91,16 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private boolean showModeBar = true;
     private boolean inputSessionActive;
     private boolean inputViewActive;
+    private boolean privateInput;
+    private boolean privateDirectDigits;
+    private int expectedPrivateSelectionDelta = -1;
+    private boolean suppressEngineCallbacks;
+    private final PrivateMultiTapState privateMultiTapState = new PrivateMultiTapState();
     private boolean keymapPromptShown;
     private String[] barLabels = null;
     private InputMode[] barModes = null;
     private int modeBarIndex = 0;
     private CharSequence currentComposing = "";
-    /** True while an inline composing region is live in the host editor. */
-    private boolean inlineComposingSet;
     /** Package name of the current host editor (set in onStartInput). */
     private String currentHostPackage;
 
@@ -237,6 +240,11 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     @Override
     public void onStartInput(android.view.inputmethod.EditorInfo attribute, boolean restarting) {
+        if (!restarting) {
+            // Some hosts start the next editor without a reliable finish callback.
+            // Cancel while getCurrentInputConnection() still identifies the old field.
+            clearAllEngineState();
+        }
         super.onStartInput(attribute, restarting);
         keyMapper.reload();
         if (keyFeedback != null && prefs != null) {
@@ -246,16 +254,28 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         inputViewActive = false;
         showModeBar = true;
         currentHostPackage = attribute != null ? attribute.packageName : null;
+        boolean wasPrivateInput = privateInput;
+        privateInput = attribute != null
+                && PrivateInputPolicy.isPrivateField(attribute.inputType, attribute.imeOptions);
+        privateDirectDigits = privateInput && PrivateInputPolicy.usesDirectDigits(attribute.inputType);
+        if (privateInput || wasPrivateInput) {
+            clearAllEngineState();
+        }
+        if (privateInput) {
+            showModeBar = false;
+            dismissPrivatePanels();
+            clearCandidateUi();
+        }
         if (prefs != null) {
             prefs.setLastHostPackage(currentHostPackage);
         }
-        int actionId = attribute.imeOptions & 0x000000ff;
-        Log.d(TAG, "onStartInput restarting=" + restarting
-                + " inputType=0x" + Integer.toHexString(attribute.inputType)
-                + " imeOptions=0x" + Integer.toHexString(attribute.imeOptions)
-                + " actionId=" + actionId
-                + " actionLabel=" + attribute.actionLabel
-                + " packageName=" + attribute.packageName);
+        if (attribute != null) {
+            int actionId = attribute.imeOptions & 0x000000ff;
+            Log.d(TAG, "onStartInput restarting=" + restarting
+                    + " private=" + privateInput
+                    + " actionId=" + actionId
+                    + " packageName=" + attribute.packageName);
+        }
     }
 
     @Override
@@ -265,7 +285,13 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         inputViewActive = true;
         activeFinish = false;
         adoptReadyRimeEngine();
-        enterModeBar();
+        if (privateInput) {
+            showModeBar = false;
+            dismissPrivatePanels();
+            clearCandidateUi();
+        } else {
+            enterModeBar();
+        }
         if (!restarting) {
             maybePromptKeymapSetup();
         }
@@ -286,6 +312,16 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             int candidatesStart, int candidatesEnd) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd,
                 candidatesStart, candidatesEnd);
+        if (privateInput && privateMultiTapState != null) {
+            boolean expected = expectedPrivateSelectionDelta >= 0
+                    && oldSelStart == oldSelEnd
+                    && newSelStart == newSelEnd
+                    && newSelStart == oldSelStart + expectedPrivateSelectionDelta;
+            expectedPrivateSelectionDelta = -1;
+            if (!expected) {
+                privateMultiTapState.breakCycle();
+            }
+        }
         // Cursor moved in the host editor; the native ExtractEditText mirrors it
         // automatically, so nothing to do here.
     }
@@ -325,11 +361,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (quickMenuPanel != null && quickMenuPanel.isShowing()) {
             quickMenuPanel.dismiss();
         }
-        currentComposing = "";
-        ImeEngine active = activeEngine();
-        if (active != null) {
-            active.reset();
-        }
+        clearAllEngineState();
         Log.d(TAG, "onFinishInput");
         super.onFinishInput();
     }
@@ -430,8 +462,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                     }
                     if (RimeEngine.hasStartedInProcess()) {
                         // Native Rime is already initialized in this process
-                        // (Service recreated). Reuse it; never call startupRime
-                        // again and do not touch its files while it is running.
+                        // (Service recreated). Reuse it; if the old Service was
+                        // interrupted during deployment, continue probing instead
+                        // of publishing early or calling startupRime again.
                         rlog(sid, "reattach", "native already started");
                         if (RimeMaintenance.hasPending(appContext)) {
                             rlog(sid, "maintenance-deferred", "native running; wait for fresh process");
@@ -444,6 +477,20 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                             }
                             rlog(sid, "reattach-failed", "keeping Java T9 fallback");
                             return;
+                        }
+                        if (RimeLifecycle.getNativeState()
+                                == RimeLifecycle.NativeState.DEPLOYING) {
+                            rlog(sid, "await-schema", RIME_SCHEMA_ID + " (reattach)");
+                            if (!engine.awaitSchema(RIME_SCHEMA_ID, RIME_DEPLOY_TIMEOUT_MS)) {
+                                self = selfRef.get();
+                                if (self != null && !self.destroyed) {
+                                    self.setRimeStatus(RimeRuntimeStatus.State.FAILED,
+                                            "schema 部署超时");
+                                }
+                                rlog(sid, "schema-timeout", "keeping Java T9 fallback");
+                                return;
+                            }
+                            rlog(sid, "schema-ready", RIME_SCHEMA_ID + " (reattach)");
                         }
                         self = selfRef.get();
                         if (self != null && !self.destroyed) {
@@ -633,6 +680,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     /** Mode label for the candidate strip, empty when the user hides the indicator. */
     private String indicatorLabel() {
+        if (privateInput) {
+            return "";
+        }
         boolean show = new GarahoPrefs(this).getShowIndicator();
         return show ? mode.label() : "";
     }
@@ -646,6 +696,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
      */
     @Override
     public boolean onEvaluateInputViewShown() {
+        super.onEvaluateInputViewShown();
         return true;
     }
 
@@ -674,7 +725,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         }
         if (keyCode == KeyEvent.KEYCODE_MENU) {
             consumeMenuKeyUp = true;
-            if (event.getRepeatCount() == 0) {
+            if (!privateInput && event.getRepeatCount() == 0) {
                 keyFeedback.perform();
                 toggleQuickMenu();
             }
@@ -689,7 +740,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             keyFeedback.perform();
         }
         if (action == InputAction.SHOW_QUICK_MENU) {
-            if (event.getRepeatCount() == 0) {
+            if (!privateInput && event.getRepeatCount() == 0) {
                 toggleQuickMenu();
             }
             return true;
@@ -721,9 +772,6 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             }
             return true;
         }
-        if (action != InputAction.NONE) {
-            Log.d(TAG, "onKeyDown keyCode=" + keyCode + " scan=" + event.getScanCode() + " -> " + action + " (mode=" + mode + ")");
-        }
         // Some Japanese flip phones share BACK and backspace. Respect an
         // explicit user mapping: delete composition/editor text first, then
         // hide the IME when there is nothing left to delete. Once hidden, the
@@ -731,12 +779,19 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (keyCode == KeyEvent.KEYCODE_BACK && action == InputAction.BACKSPACE_DELETE) {
             consumeBoundBackKeyUp = true;
             trackResetComboDown(action, event);
+            if (privateInput) {
+                privateMultiTapState.breakCycle();
+                return handlePrivateBoundBackKey();
+            }
             return handleBoundBackKey();
         }
         // Two-stage BACK (doc §1 / iWnn quick-select): while composing, first
         // BACK cancels composing and returns to the mode bar; a second BACK
         // (when already on the mode bar) falls through to dismiss the IME.
         if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (privateInput) {
+                return false;
+            }
             if (!showModeBar) {
                 enterModeBar();
                 return true;
@@ -801,6 +856,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private boolean handleAction(InputAction action) {
         if (action == InputAction.NONE) {
             return false;
+        }
+        if (privateInput) {
+            return handlePrivateAction(action);
         }
         if (showModeBar) {
             return handleModeBarAction(action);
@@ -903,6 +961,84 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             default:
                 return false;
         }
+    }
+
+    private boolean handlePrivateAction(InputAction action) {
+        int digit = action.digit();
+        if (digit >= 0) {
+            if (privateDirectDigits || digit < 2) {
+                privateMultiTapState.breakCycle();
+                commitChar((char) ('0' + digit));
+                return true;
+            }
+            PrivateMultiTapState.Edit edit = privateMultiTapState.press(
+                    digit, android.os.SystemClock.uptimeMillis(), privateMultiTapTimeoutMs());
+            applyPrivateEdit(edit);
+            return true;
+        }
+        privateMultiTapState.breakCycle();
+        switch (action) {
+            case INPUT_KEY_STAR:
+            case INPUT_KEY_POUND:
+                // Symbols, phrases and their shortcuts are disabled in private fields.
+                return true;
+            case BACKSPACE_DELETE:
+                return deleteFromEditor();
+            case NAV_LEFT:
+                sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_LEFT);
+                return true;
+            case NAV_RIGHT:
+                sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_RIGHT);
+                return true;
+            case ENTER:
+                commitTextToEditor("\n");
+                return true;
+            case CONFIRM_SELECTION:
+                return handleIdleCenterOk();
+            case DISMISS_IME:
+                inputViewActive = false;
+                requestHideSelf(0);
+                return true;
+            default:
+                // Prediction, modes, symbols, phrases and menus stay disabled.
+                return true;
+        }
+    }
+
+    private int privateMultiTapTimeoutMs() {
+        return prefs == null ? 600 : Math.max(100, prefs.getMultiTapTimeout());
+    }
+
+    private void applyPrivateEdit(PrivateMultiTapState.Edit edit) {
+        if (edit == null) {
+            return;
+        }
+        android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
+        if (ic == null) {
+            Log.w(TAG, "private edit skipped: no focused editor");
+            privateMultiTapState.breakCycle();
+            return;
+        }
+        ic.beginBatchEdit();
+        try {
+            expectedPrivateSelectionDelta = edit.replacePrevious ? 0 : 1;
+            if (edit.replacePrevious) {
+                ic.deleteSurroundingText(1, 0);
+            }
+            ic.commitText(String.valueOf(edit.character), 1);
+        } finally {
+            ic.endBatchEdit();
+        }
+    }
+
+    private boolean handlePrivateBoundBackKey() {
+        boolean deleted = deleteFromEditorIfPossible();
+        if (!BoundBackKeyPolicy.shouldHideIme(deleted, editorIsKnownEmpty())) {
+            return true;
+        }
+        inputViewActive = false;
+        requestHideSelf(0);
+        return true;
     }
 
     /** Key routing while the iWnn-style mode bar is up (composing empty). */
@@ -1186,8 +1322,10 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             w = getWindow().getWindow();
         } catch (Throwable ignored) {
         }
-        CharSequence sk1 = hasSoftkeyLeftBinding() ? getString(R.string.softkey_menu) : "";
-        CharSequence sk2 = hasSoftkeyRightBinding() ? getString(R.string.softkey_symbol) : "";
+        CharSequence sk1 = !privateInput && hasSoftkeyLeftBinding()
+                ? getString(R.string.softkey_menu) : "";
+        CharSequence sk2 = !privateInput && hasSoftkeyRightBinding()
+                ? getString(R.string.softkey_symbol) : "";
         CharSequence csk = isSoftkeyCompleteState() ? getString(R.string.softkey_complete) : "";
         softkeyGuide.setAllLabels(w, sk1, sk2, csk);
     }
@@ -1366,6 +1504,11 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     /** Show the mode bar (composing cleared / input started / BACK pressed). */
     private void enterModeBar() {
+        if (privateInput) {
+            showModeBar = false;
+            clearCandidateUi();
+            return;
+        }
         buildModeBar();
         showModeBar = true;
         ImeEngine active = activeEngine();
@@ -1674,49 +1817,64 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private void commitTextToEditor(CharSequence text) {
         android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
         if (ic == null) {
-            Log.w(TAG, "commitText SKIPPED: InputConnection null (no focused editor) text=\"" + text + "\"");
+            Log.w(TAG, "commitText skipped: no focused editor");
             return;
         }
         boolean ok = ic.commitText(text, 1);
-        Log.d(TAG, "commitText ok=" + ok + " text=\"" + text + "\"");
+        Log.d(TAG, "commitText ok=" + ok + " length=" + (text == null ? 0 : text.length()));
     }
 
     @Override
     public void onComposingChanged(CharSequence composing) {
+        if (privateInput || suppressEngineCallbacks) {
+            return;
+        }
         currentComposing = composing;
         if (candidateBar != null) {
             candidateBar.setComposingText(composing);
         }
-        updateInlineComposing(composing);
         refreshSoftkeyGuide();
     }
 
-    /**
-     * Push composing text into the host editor via {@code setComposingText},
-     * mirroring iWnn / standard Japanese-IME inline preview. Without this the
-     * editor stays blank while the user composes (the preview lived only in the
-     * candidate strip), so on flip phones the user could not see what they were
-     * typing (np701kc.md). The composing region is replaced by {@code commitText}
-     * when a candidate is confirmed, and removed if composing is cancelled.
-     */
-    private void updateInlineComposing(CharSequence composing) {
-        android.view.inputmethod.InputConnection ic = getCurrentInputConnection();
-        if (ic == null) {
+    private void clearAllEngineState() {
+        suppressEngineCallbacks = true;
+        try {
+            if (pinyinEngine != null) pinyinEngine.reset();
+            if (englishEngine != null) englishEngine.reset();
+            if (zhMultiTapEngine != null) zhMultiTapEngine.reset();
+            if (enMultiTapEngine != null) enMultiTapEngine.reset();
+        } finally {
+            suppressEngineCallbacks = false;
+        }
+        privateMultiTapState.breakCycle();
+        currentComposing = "";
+    }
+
+    private void dismissPrivatePanels() {
+        if (symbolPanel != null && symbolPanel.isShowing()) {
+            symbolPanel.dismiss();
+        }
+        if (quickMenuPanel != null && quickMenuPanel.isShowing()) {
+            quickMenuPanel.dismiss();
+        }
+    }
+
+    private void clearCandidateUi() {
+        if (candidateBar == null) {
             return;
         }
-        if (composing != null && composing.length() > 0) {
-            ic.setComposingText(composing, 1);
-            inlineComposingSet = true;
-        } else if (inlineComposingSet) {
-            // Composing cleared without a commit (e.g. backspace / cancel):
-            // remove the inline composing region so no stale preview remains.
-            ic.commitText("", 0);
-            inlineComposingSet = false;
-        }
+        candidateBar.setCandidates(new String[0]);
+        candidateBar.setPinyinOptions(new String[0], -1);
+        candidateBar.setComposingText("");
+        candidateBar.showModeBar(false);
+        candidateBar.setModeLabel("");
     }
 
     @Override
     public void onCandidatesChanged(List<String> candidates) {
+        if (privateInput || suppressEngineCallbacks) {
+            return;
+        }
         Log.d(TAG, "onCandidatesChanged count=" + candidates.size());
         if (candidateBar != null) {
             candidateBar.setCandidates(candidates.toArray(new String[0]));
@@ -1735,7 +1893,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     @Override
     public void onCommit(String text) {
-        if (text == null) {
+        if (text == null || privateInput || suppressEngineCallbacks) {
             return;
         }
         if ((mode == InputMode.EN || mode == InputMode.EN_MTAP)
@@ -1743,9 +1901,6 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             text = maybeCapitalize(text);
         }
         commitTextToEditor(text);
-        // commitText replaces the inline composing region; clear the flag so the
-        // ensuing onComposingChanged("") does not try to delete committed text.
-        inlineComposingSet = false;
     }
 
     /**

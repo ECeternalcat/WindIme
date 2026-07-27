@@ -64,7 +64,7 @@ public final class RimeData {
             // before installing a new snapshot; user learning lives separately.
             deleteContents(sharedDir);
             copyAssets(am, ASSET_ROOT, sharedDir);
-            writeMarker();
+            writeMarker(sharedDir);
             Log.i(TAG, "Rime data extracted to " + sharedDir);
             return true;
         } catch (IOException e) {
@@ -88,12 +88,10 @@ public final class RimeData {
         }
     }
 
-    private void writeMarker() {
-        File marker = new File(sharedDir, VERSION_MARKER);
+    static void writeMarker(File directory) throws IOException {
+        File marker = new File(directory, VERSION_MARKER);
         try (OutputStream out = new FileOutputStream(marker)) {
             out.write(DATA_VERSION.getBytes("UTF-8"));
-        } catch (IOException e) {
-            Log.w(TAG, "Could not write version marker", e);
         }
     }
 

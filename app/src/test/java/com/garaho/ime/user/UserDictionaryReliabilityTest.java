@@ -5,6 +5,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.File;
+import java.util.Locale;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -70,6 +71,20 @@ public class UserDictionaryReliabilityTest {
     }
 
     @Test
+    public void loadRestoresBackupBeforeMissingFileCheck() throws Exception {
+        File file = new File(tmp.getRoot(), "backup-only.json");
+        AtomicStore.writeAtomic(new File(tmp.getRoot(), "backup-only.json.bak"),
+                "[{\"pinyin\":\"ni\",\"word\":\"你\"}]".getBytes("UTF-8"));
+
+        UserDictionary dictionary = UserDictionary.forFile(file);
+
+        assertEquals(1, dictionary.size());
+        assertEquals("你", dictionary.lookup("ni").get(0));
+        assertTrue(file.exists());
+        assertFalse(new File(tmp.getRoot(), "backup-only.json.bak").exists());
+    }
+
+    @Test
     public void exportThenImportRoundTrip() {
         File f1 = new File(tmp.getRoot(), "u1.json");
         UserDictionary d1 = UserDictionary.forFile(f1);
@@ -109,6 +124,84 @@ public class UserDictionaryReliabilityTest {
         File src = new File(tmp.getRoot(), "bad.json");
         AtomicStore.writeAtomic(src, "not json".getBytes("UTF-8"));
         assertEquals(-1, d.importFrom(src));
+    }
+
+    @Test
+    public void writeFailuresLeaveMemoryAndDiskUnchanged() {
+        File file = new File(tmp.getRoot(), "u.json");
+        UserDictionary d = UserDictionary.forFile(file);
+        assertEquals(StoreResult.OK, d.add("ni", "你"));
+        AtomicStore.setFailWritesForTests(true);
+        try {
+            assertEquals(StoreResult.IO_ERROR, d.add("hao", "好"));
+            assertEquals(StoreResult.IO_ERROR, d.update("ni", "你", "wo", "我"));
+            assertFalse(d.remove("ni", "你"));
+            assertFalse(d.clear());
+            assertEquals(1, d.size());
+            assertEquals("你", d.lookup("ni").get(0));
+        } finally {
+            AtomicStore.setFailWritesForTests(false);
+        }
+        UserDictionary reopened = UserDictionary.forFile(file);
+        assertEquals(1, reopened.size());
+        assertEquals("你", reopened.lookup("ni").get(0));
+    }
+
+    @Test
+    public void failedImportDoesNotCommitParsedEntries() throws Exception {
+        File file = new File(tmp.getRoot(), "u.json");
+        UserDictionary d = UserDictionary.forFile(file);
+        assertEquals(StoreResult.OK, d.add("ni", "你"));
+        File src = new File(tmp.getRoot(), "import.json");
+        AtomicStore.writeAtomic(src,
+                "[{\"pinyin\":\"hao\",\"word\":\"好\"}]".getBytes("UTF-8"));
+        AtomicStore.setFailWritesForTests(true);
+        try {
+            assertEquals(-1, d.importFrom(src));
+            assertEquals(1, d.size());
+            assertTrue(d.lookup("hao").isEmpty());
+        } finally {
+            AtomicStore.setFailWritesForTests(false);
+        }
+    }
+
+    @Test
+    public void normalizationDoesNotDependOnDefaultLocale() {
+        Locale original = Locale.getDefault();
+        Locale.setDefault(new Locale("tr", "TR"));
+        try {
+            UserDictionary d = UserDictionary.forFile(new File(tmp.getRoot(), "locale.json"));
+            assertEquals(StoreResult.OK, d.add("PINYIN", "词"));
+            assertEquals("词", d.lookup("pinyin").get(0));
+        } finally {
+            Locale.setDefault(original);
+        }
+    }
+
+    @Test
+    public void legacyEntriesAreNotTruncatedByCurrentAddLimits() throws Exception {
+        File file = new File(tmp.getRoot(), "legacy.json");
+        String longWord = longStr(UserDictionary.WORD_MAX + 1);
+        StringBuilder json = new StringBuilder("[");
+        for (int i = 0; i < UserDictionary.MAX_ENTRIES + 1; i++) {
+            if (i > 0) json.append(',');
+            json.append("{\"pinyin\":\"p").append(i)
+                    .append("\",\"word\":\"w").append(i).append("\"}");
+        }
+        json.append(",{\"pinyin\":\"long\",\"word\":\"")
+                .append(longWord).append("\"}")
+                .append(",{\"pinyin\":\"p1\",\"word\":\"w1\"}]");
+        AtomicStore.writeAtomic(file, json.toString().getBytes("UTF-8"));
+
+        UserDictionary dictionary = UserDictionary.forFile(file);
+        assertEquals(UserDictionary.MAX_ENTRIES + 3, dictionary.size());
+        assertEquals(StoreResult.TOO_MANY, dictionary.add("new", "new"));
+        assertTrue(dictionary.remove("p0", "w0"));
+
+        UserDictionary reopened = UserDictionary.forFile(file);
+        assertEquals(UserDictionary.MAX_ENTRIES + 2, reopened.size());
+        assertEquals(longWord, reopened.lookup("long").get(0));
+        assertEquals(2, reopened.lookup("p1").size());
     }
 
     private static String longStr(int n) {

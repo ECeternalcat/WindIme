@@ -9,8 +9,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/GarahoTheme"
-        android:directBootAware="true">
+        android:theme="@style/GarahoTheme">
 
         <!-- Kyocera/SoftBank vendor shared lib (NfpSoftkeyGuide). Optional: only
              present on devices like the 701KC. Used via reflection so the APK

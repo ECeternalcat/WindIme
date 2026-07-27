@@ -2,6 +2,7 @@ package com.garaho.ime.engine;
 
 import android.util.Log;
 
+import com.garaho.ime.rime.RimeLifecycle;
 import com.osfans.trime.core.CandidateProto;
 import com.osfans.trime.core.CommitProto;
 import com.osfans.trime.core.Rime;
@@ -30,8 +31,6 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
 
     private static final String TAG = "RimeEngine";
     private static final int FETCH_LIMIT = 12;
-    private static volatile boolean startedInProcess;
-
     private final PinyinSession session = new PinyinSession();
     private EngineListener listener;
     private List<String> candidates = Collections.emptyList();
@@ -72,7 +71,7 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
             // here - it reliably returns ".default" before the work thread
             // finishes even though deployment will succeed shortly after.
             Rime.startupRime(sharedDir.getAbsolutePath(), userDir.getAbsolutePath(), version, false);
-            startedInProcess = true;
+            RimeLifecycle.markNativeStarted();
             Log.i(TAG, "Rime started; schema deploys asynchronously on work thread");
             return new RimeEngine();
         } catch (Throwable t) {
@@ -82,7 +81,7 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
     }
 
     public static boolean hasStartedInProcess() {
-        return startedInProcess;
+        return RimeLifecycle.hasNativeStarted();
     }
 
     /**
@@ -91,22 +90,25 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
      * is recreated mid-process: native state is reusable, re-initializing it
      * would start a second, conflicting maintenance session.
      *
-     * @return a ready engine, or {@code null} if native Rime is not running /
-     *         not loadable in this process.
+     * @return an engine bound to the native process, or {@code null} if native
+     *         Rime is not running / not loadable in this process. Callers must
+     *         still wait for schema readiness while state is DEPLOYING.
      */
     public static RimeEngine tryReattach(String schemaId) {
-        if (!startedInProcess || !Rime.loadLibrary()) {
+        if (!RimeLifecycle.hasNativeStarted() || !Rime.loadLibrary()) {
             return null;
         }
         try {
             RimeEngine engine = new RimeEngine();
-            try {
-                String current = Rime.getCurrentRimeSchema();
-                if (!schemaId.equals(current)) {
-                    Rime.selectRimeSchema(schemaId);
+            if (RimeLifecycle.getNativeState() == RimeLifecycle.NativeState.READY) {
+                try {
+                    String current = Rime.getCurrentRimeSchema();
+                    if (!schemaId.equals(current)) {
+                        Rime.selectRimeSchema(schemaId);
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "reattach schema select failed: " + t);
                 }
-            } catch (Throwable t) {
-                Log.w(TAG, "reattach schema select failed: " + t);
             }
             Log.i(TAG, "Rime reattached (native already started)");
             return engine;
@@ -121,7 +123,7 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
      * false if native Rime is not running so callers need not probe separately.
      */
     public static boolean syncUserData() {
-        if (!startedInProcess || !Rime.loadLibrary()) {
+        if (!RimeLifecycle.hasNativeStarted() || !Rime.loadLibrary()) {
             return false;
         }
         try {
@@ -144,6 +146,7 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
             try {
                 String current = Rime.getCurrentRimeSchema();
                 if (schemaId.equals(current) || Rime.selectRimeSchema(schemaId)) {
+                    RimeLifecycle.markSchemaReady();
                     Log.i(TAG, "Rime schema ready: " + schemaId);
                     return true;
                 }
@@ -212,7 +215,7 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
                 Rime.clearRimeComposition();
             } catch (Throwable ignored) {
             }
-            Log.d(TAG, "selectCandidate: user-word fast path for '" + chosen + "'");
+            Log.d(TAG, "selectCandidate: user-word fast path");
             clearAfterCommit(chosen);
             return true;
         }
@@ -307,7 +310,7 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
         String letters = phraseKey;
         currentPhraseKey = phraseKey;
         composing = session.getComposing();
-        Log.d(TAG, "pushPhrase: digits=" + buf + " phrase=" + phraseKey + " letters=" + letters);
+        Log.d(TAG, "pushPhrase length=" + buf.length());
         try {
             Rime.clearRimeComposition();
         } catch (Throwable t) {
@@ -320,13 +323,13 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
             } catch (Throwable t) {
                 Log.w(TAG, "simulateRimeKeySequence threw: " + t);
             }
-            Log.d(TAG, "simulateRimeKeySequence('" + letters + "') -> " + ok);
+            Log.d(TAG, "simulateRimeKeySequence ok=" + ok + " length=" + letters.length());
             if (!ok) {
                 for (int i = 0; i < letters.length(); i++) {
                     try {
                         Rime.processRimeKey((int) letters.charAt(i), 0);
                     } catch (Throwable t) {
-                        Log.w(TAG, "processRimeKey(" + letters.charAt(i) + ") threw: " + t);
+                        Log.w(TAG, "processRimeKey failed at index " + i, t);
                         break;
                     }
                 }
@@ -351,8 +354,7 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
             }
         }
         Log.d(TAG, "getRimeCandidates -> count=" + (arr == null ? -1 : arr.length)
-                + " usable=" + list.size()
-                + (list.isEmpty() ? "" : " first=" + list.get(0)));
+                + " usable=" + list.size());
         nativeCandidates = list;
         candidates = com.garaho.ime.user.UserWordSource.merge(currentPhraseKey, list, userWords);
         CommitProto pending = safeCommit();

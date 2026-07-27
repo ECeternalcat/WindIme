@@ -52,14 +52,18 @@ public class ResetSettingsActivity extends BaseMenuActivity {
                     case 2:
                         confirm(R.string.reset_user_dict_confirm, new Runnable() {
                             @Override public void run() {
-                                UserDictionary.get(ResetSettingsActivity.this).clear();
+                                if (!UserDictionary.get(ResetSettingsActivity.this).clear()) {
+                                    showStoreFailure();
+                                }
                             }
                         });
                         break;
                     case 3:
                         confirm(R.string.reset_phrases_confirm, new Runnable() {
                             @Override public void run() {
-                                PhraseStore.get(ResetSettingsActivity.this).clear();
+                                if (!PhraseStore.get(ResetSettingsActivity.this).clear()) {
+                                    showStoreFailure();
+                                }
                             }
                         });
                         break;
@@ -68,12 +72,13 @@ public class ResetSettingsActivity extends BaseMenuActivity {
                             @Override public void run() {
                                 new GarahoPrefs(ResetSettingsActivity.this).clearAll();
                                 new KeyMapper(ResetSettingsActivity.this).resetToFactory();
-                                UserDictionary.get(ResetSettingsActivity.this).clear();
-                                PhraseStore.get(ResetSettingsActivity.this).clear();
+                                boolean cleared = UserDictionary.get(ResetSettingsActivity.this).clear();
+                                cleared &= PhraseStore.get(ResetSettingsActivity.this).clear();
                                 RimeMaintenance.enqueue(ResetSettingsActivity.this,
                                         RimeMaintenance.Action.CLEAR_LEARNING);
-                                Toast.makeText(ResetSettingsActivity.this,
-                                        R.string.reset_all_done, Toast.LENGTH_SHORT).show();
+                                Toast.makeText(ResetSettingsActivity.this, cleared
+                                                ? R.string.reset_all_done : R.string.store_validation_io,
+                                        Toast.LENGTH_SHORT).show();
                             }
                         });
                         break;
@@ -95,6 +100,10 @@ public class ResetSettingsActivity extends BaseMenuActivity {
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
+    }
+
+    private void showStoreFailure() {
+        Toast.makeText(this, R.string.store_validation_io, Toast.LENGTH_SHORT).show();
     }
 
     @Override

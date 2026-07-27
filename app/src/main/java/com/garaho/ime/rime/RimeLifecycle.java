@@ -2,6 +2,7 @@ package com.garaho.ime.rime;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Process-wide owner of native Rime initialization observability and
@@ -25,8 +26,16 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class RimeLifecycle {
 
+    public enum NativeState {
+        NOT_STARTED,
+        DEPLOYING,
+        READY
+    }
+
     private static final AtomicInteger SESSION = new AtomicInteger(0);
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
+    private static final AtomicReference<NativeState> NATIVE_STATE =
+            new AtomicReference<>(NativeState.NOT_STARTED);
 
     private RimeLifecycle() {
     }
@@ -54,6 +63,28 @@ public final class RimeLifecycle {
 
     public static boolean isRunning() {
         return RUNNING.get();
+    }
+
+    /** Record that native startup completed and asynchronous schema deployment began. */
+    public static void markNativeStarted() {
+        NATIVE_STATE.compareAndSet(NativeState.NOT_STARTED, NativeState.DEPLOYING);
+    }
+
+    /** Publish schema readiness. The process state is monotonic until process death. */
+    public static void markSchemaReady() {
+        NATIVE_STATE.compareAndSet(NativeState.DEPLOYING, NativeState.READY);
+    }
+
+    public static NativeState getNativeState() {
+        return NATIVE_STATE.get();
+    }
+
+    public static boolean hasNativeStarted() {
+        return NATIVE_STATE.get() != NativeState.NOT_STARTED;
+    }
+
+    static void resetNativeStateForTests() {
+        NATIVE_STATE.set(NativeState.NOT_STARTED);
     }
 
     /**

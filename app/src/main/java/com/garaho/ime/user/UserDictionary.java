@@ -9,8 +9,8 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -48,7 +48,7 @@ public final class UserDictionary implements UserWordSource {
     private static volatile UserDictionary instance;
 
     private final File file;
-    private final Map<String, LinkedHashSet<String>> map = new LinkedHashMap<>();
+    private final Map<String, List<String>> map = new LinkedHashMap<>();
 
     private UserDictionary(File file) {
         this.file = file;
@@ -72,7 +72,7 @@ public final class UserDictionary implements UserWordSource {
         if (pinyin == null) {
             return Collections.emptyList();
         }
-        LinkedHashSet<String> set = map.get(normalize(pinyin));
+        List<String> set = map.get(normalize(pinyin));
         if (set == null || set.isEmpty()) {
             return Collections.emptyList();
         }
@@ -82,14 +82,20 @@ public final class UserDictionary implements UserWordSource {
     }
 
     public synchronized StoreResult add(String pinyin, String word) {
-        StoreResult r = addInternal(pinyin, word);
+        Map<String, List<String>> next = copyMap();
+        StoreResult r = addInternal(next, pinyin, word);
         if (r != StoreResult.OK) {
             return r;
         }
-        return persist() ? StoreResult.OK : StoreResult.IO_ERROR;
+        if (!persist(next)) {
+            return StoreResult.IO_ERROR;
+        }
+        replaceMap(next);
+        return StoreResult.OK;
     }
 
-    private StoreResult addInternal(String pinyin, String word) {
+    private StoreResult addInternal(Map<String, List<String>> target,
+                                    String pinyin, String word) {
         if (isBlank(pinyin) || isBlank(word)) {
             return StoreResult.EMPTY;
         }
@@ -98,37 +104,64 @@ public final class UserDictionary implements UserWordSource {
         if (p.length() > PINYIN_MAX || w.length() > WORD_MAX) {
             return StoreResult.TOO_LONG;
         }
-        if (size() >= MAX_ENTRIES) {
+        if (sizeOf(target) >= MAX_ENTRIES) {
             return StoreResult.TOO_MANY;
         }
         String key = normalize(p);
-        LinkedHashSet<String> set = map.get(key);
+        List<String> set = target.get(key);
         if (set != null && set.contains(w)) {
             return StoreResult.DUPLICATE;
         }
         if (set == null) {
-            set = new LinkedHashSet<>();
-            map.put(key, set);
+            set = new ArrayList<>();
+            target.put(key, set);
         }
         set.add(w);
         return StoreResult.OK;
     }
 
     public synchronized boolean remove(String pinyin, String word) {
-        LinkedHashSet<String> set = map.get(normalize(pinyin));
+        Map<String, List<String>> next = copyMap();
+        String key = normalize(pinyin);
+        List<String> set = next.get(key);
         if (set == null || !set.remove(word)) {
             return false;
         }
         if (set.isEmpty()) {
-            map.remove(normalize(pinyin));
+            next.remove(key);
         }
-        persist();
+        if (!persist(next)) {
+            return false;
+        }
+        replaceMap(next);
         return true;
+    }
+
+    public synchronized StoreResult update(String oldPinyin, String oldWord,
+                                           String pinyin, String word) {
+        Map<String, List<String>> next = copyMap();
+        String oldKey = normalize(oldPinyin);
+        List<String> oldSet = next.get(oldKey);
+        if (oldSet == null || !oldSet.remove(oldWord)) {
+            return StoreResult.EMPTY;
+        }
+        if (oldSet.isEmpty()) {
+            next.remove(oldKey);
+        }
+        StoreResult result = addInternal(next, pinyin, word);
+        if (result != StoreResult.OK) {
+            return result;
+        }
+        if (!persist(next)) {
+            return StoreResult.IO_ERROR;
+        }
+        replaceMap(next);
+        return StoreResult.OK;
     }
 
     public synchronized int size() {
         int n = 0;
-        for (LinkedHashSet<String> set : map.values()) {
+        for (List<String> set : map.values()) {
             n += set.size();
         }
         return n;
@@ -136,7 +169,7 @@ public final class UserDictionary implements UserWordSource {
 
     public synchronized List<Entry> entries() {
         List<Entry> out = new ArrayList<>();
-        for (Map.Entry<String, LinkedHashSet<String>> e : map.entrySet()) {
+        for (Map.Entry<String, List<String>> e : map.entrySet()) {
             for (String w : e.getValue()) {
                 out.add(new Entry(e.getKey(), w));
             }
@@ -144,12 +177,16 @@ public final class UserDictionary implements UserWordSource {
         return out;
     }
 
-    public synchronized void clear() {
+    public synchronized boolean clear() {
         if (map.isEmpty()) {
-            return;
+            return true;
+        }
+        Map<String, List<String>> next = new LinkedHashMap<>();
+        if (!persist(next)) {
+            return false;
         }
         map.clear();
-        persist();
+        return true;
     }
 
     /**
@@ -159,29 +196,35 @@ public final class UserDictionary implements UserWordSource {
      * @return number of newly added entries, or {@code -1} on parse failure.
      */
     public synchronized int importFrom(File src) {
-        if (src == null || !src.exists()) {
+        if (src == null) {
             return -1;
         }
         JSONArray arr;
         try {
+            AtomicStore.recover(src);
+            if (!src.exists()) {
+                return -1;
+            }
             arr = new JSONArray(AtomicStore.readUtf8(src, AtomicStore.MAX_IMPORT_BYTES));
         } catch (Exception e) {
             return -1;
         }
+        Map<String, List<String>> next = copyMap();
         int added = 0;
-        boolean changed = false;
         for (int i = 0; i < arr.length(); i++) {
             try {
                 JSONObject o = arr.getJSONObject(i);
-                if (addInternal(o.optString("pinyin", ""), o.optString("word", "")) == StoreResult.OK) {
+                if (addInternal(next, o.optString("pinyin", ""), o.optString("word", "")) == StoreResult.OK) {
                     added++;
-                    changed = true;
                 }
             } catch (Exception ignored) {
             }
         }
-        if (changed && !persist()) {
+        if (added > 0 && !persist(next)) {
             return -1;
+        }
+        if (added > 0) {
+            replaceMap(next);
         }
         return added;
     }
@@ -197,19 +240,26 @@ public final class UserDictionary implements UserWordSource {
     }
 
     private void load() {
-        if (!file.exists()) {
-            return;
-        }
         try {
+            AtomicStore.recover(file);
+            if (!file.exists()) {
+                return;
+            }
             JSONArray arr = new JSONArray(AtomicStore.readUtf8(file));
+            Map<String, List<String>> loaded = new LinkedHashMap<>();
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject o = arr.getJSONObject(i);
                 String p = o.optString("pinyin", "");
                 String w = o.optString("word", "");
-                if (!isBlank(p) && !isBlank(w)) {
-                    map.computeIfAbsent(normalize(p), k -> new LinkedHashSet<String>()).add(w);
+                String key = normalize(p);
+                List<String> words = loaded.get(key);
+                if (words == null) {
+                    words = new ArrayList<>();
+                    loaded.put(key, words);
                 }
+                words.add(w);
             }
+            replaceMap(loaded);
         } catch (Exception ex) {
             // Corrupt JSON: discard any partial state, preserve the original
             // aside for manual recovery, and start from an empty store.
@@ -218,9 +268,9 @@ public final class UserDictionary implements UserWordSource {
         }
     }
 
-    private boolean persist() {
+    private boolean persist(Map<String, List<String>> target) {
         try {
-            AtomicStore.writeAtomic(file, toJson().toString().getBytes("UTF-8"));
+            AtomicStore.writeAtomic(file, toJson(target).toString().getBytes("UTF-8"));
             return true;
         } catch (Exception e) {
             return false;
@@ -228,8 +278,12 @@ public final class UserDictionary implements UserWordSource {
     }
 
     private JSONArray toJson() {
+        return toJson(map);
+    }
+
+    private static JSONArray toJson(Map<String, List<String>> target) {
         JSONArray arr = new JSONArray();
-        for (Map.Entry<String, LinkedHashSet<String>> e : map.entrySet()) {
+        for (Map.Entry<String, List<String>> e : target.entrySet()) {
             for (String w : e.getValue()) {
                 JSONObject o = new JSONObject();
                 try {
@@ -244,7 +298,28 @@ public final class UserDictionary implements UserWordSource {
     }
 
     private static String normalize(String s) {
-        return s.toLowerCase().replace("'", "").replace(" ", "").trim();
+        return s.toLowerCase(Locale.ROOT).replace("'", "").replace(" ", "").trim();
+    }
+
+    private Map<String, List<String>> copyMap() {
+        Map<String, List<String>> copy = new LinkedHashMap<>();
+        for (Map.Entry<String, List<String>> entry : map.entrySet()) {
+            copy.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+        }
+        return copy;
+    }
+
+    private void replaceMap(Map<String, List<String>> next) {
+        map.clear();
+        map.putAll(next);
+    }
+
+    private static int sizeOf(Map<String, List<String>> target) {
+        int size = 0;
+        for (List<String> values : target.values()) {
+            size += values.size();
+        }
+        return size;
     }
 
     private static boolean isBlank(String s) {

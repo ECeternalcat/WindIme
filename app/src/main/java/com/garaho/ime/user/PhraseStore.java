@@ -7,7 +7,10 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 
 /**
  * Canned-phrase store (design doc §2.4): quick-insert snippets grouped by
@@ -24,6 +27,8 @@ public final class PhraseStore {
     public static final String EXPORT_FILE_NAME = "WindIme_phrases.json";
     public static final int LABEL_MAX = 64;
     public static final int TEXT_MAX = 2000;
+    public static final int MAX_ENTRIES = 1000;
+    public static final int MAX_IMPORT_ENTRIES = 5000;
 
     public static final class Entry {
         public final String category;
@@ -34,6 +39,19 @@ public final class PhraseStore {
             this.category = category == null ? "" : category;
             this.label = label == null ? "" : label;
             this.text = text == null ? "" : text;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof Entry)) return false;
+            Entry entry = (Entry) other;
+            return category.equals(entry.category) && text.equals(entry.text);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(category, text);
         }
     }
 
@@ -67,32 +85,42 @@ public final class PhraseStore {
     }
 
     public synchronized StoreResult add(String category, String label, String text) {
-        StoreResult r = validate(entries.size(), category, label, text);
+        List<Entry> next = new ArrayList<>(entries);
+        StoreResult r = validate(next, null, category, label, text);
         if (r != StoreResult.OK) {
             return r;
         }
-        entries.add(build(category, label, text));
-        return persist() ? StoreResult.OK : StoreResult.IO_ERROR;
+        next.add(build(category, label, text));
+        if (!persist(next)) {
+            return StoreResult.IO_ERROR;
+        }
+        replaceEntries(next);
+        return StoreResult.OK;
     }
 
     public synchronized StoreResult update(int index, String category, String label, String text) {
         if (index < 0 || index >= entries.size()) {
             return StoreResult.EMPTY;
         }
-        StoreResult r = validate(index, category, label, text);
+        List<Entry> current = new ArrayList<>(entries);
+        Entry previous = current.get(index);
+        List<Entry> next = new ArrayList<>(entries);
+        StoreResult r = validate(next, previous, category, label, text);
         if (r != StoreResult.OK) {
             return r;
         }
-        entries.set(index, build(category, label, text));
-        return persist() ? StoreResult.OK : StoreResult.IO_ERROR;
+        current.set(index, build(category, label, text));
+        next = current;
+        if (!persist(next)) {
+            return StoreResult.IO_ERROR;
+        }
+        replaceEntries(next);
+        return StoreResult.OK;
     }
 
-    /**
-     * Validate an entry, ignoring the one at {@code ignoreIndex} so in-place
-     * edit does not count itself as a duplicate. Does not mutate the store.
-     * {@code ignoreIndex == size} means "no self to ignore" (used by add).
-     */
-    private StoreResult validate(int ignoreIndex, String category, String label, String text) {
+    /** Validate an entry without counting {@code ignored} as a duplicate. */
+    private StoreResult validate(List<Entry> target, Entry ignored,
+                                 String category, String label, String text) {
         if (isBlank(text)) {
             return StoreResult.EMPTY;
         }
@@ -102,7 +130,11 @@ public final class PhraseStore {
         if (lbl.length() > LABEL_MAX || txt.length() > TEXT_MAX) {
             return StoreResult.TOO_LONG;
         }
-        if (containsDuplicate(ignoreIndex, cat, txt)) {
+        Entry candidate = new Entry(cat, lbl, txt);
+        if (target.size() >= MAX_ENTRIES && ignored == null) {
+            return StoreResult.TOO_MANY;
+        }
+        if (target.contains(candidate) && !candidate.equals(ignored)) {
             return StoreResult.DUPLICATE;
         }
         return StoreResult.OK;
@@ -112,33 +144,29 @@ public final class PhraseStore {
         return new Entry(trimTo(category), trimTo(label), text.trim());
     }
 
-    private boolean containsDuplicate(int ignoreIndex, String category, String text) {
-        for (int i = 0; i < entries.size(); i++) {
-            if (i == ignoreIndex) {
-                continue;
-            }
-            Entry e = entries.get(i);
-            if (e.category.equals(category) && e.text.equals(text)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    public synchronized void remove(int index) {
+    public synchronized boolean remove(int index) {
         if (index < 0 || index >= entries.size()) {
-            return;
+            return false;
         }
-        entries.remove(index);
-        persist();
+        List<Entry> next = new ArrayList<>(entries);
+        next.remove(index);
+        if (!persist(next)) {
+            return false;
+        }
+        replaceEntries(next);
+        return true;
     }
 
-    public synchronized void clear() {
+    public synchronized boolean clear() {
         if (entries.isEmpty()) {
-            return;
+            return true;
+        }
+        List<Entry> next = new ArrayList<>();
+        if (!persist(next)) {
+            return false;
         }
         entries.clear();
-        persist();
+        return true;
     }
 
     /**
@@ -146,34 +174,66 @@ public final class PhraseStore {
      *
      * @return number of newly added entries, or {@code -1} on parse failure.
      */
-    public synchronized int importFrom(File src) {
-        if (src == null || !src.exists()) {
+    public int importFrom(File src) {
+        List<Entry> imported = parseImport(src);
+        if (imported == null) {
             return -1;
+        }
+        return mergeImported(imported);
+    }
+
+    private static List<Entry> parseImport(File src) {
+        if (src == null) {
+            return null;
         }
         JSONArray arr;
         try {
+            AtomicStore.recover(src);
+            if (!src.exists()) {
+                return null;
+            }
             arr = new JSONArray(AtomicStore.readUtf8(src, AtomicStore.MAX_IMPORT_BYTES));
         } catch (Exception e) {
-            return -1;
+            return null;
         }
-        int added = 0;
-        boolean changed = false;
+        if (arr.length() > MAX_IMPORT_ENTRIES) {
+            return null;
+        }
+        List<Entry> imported = new ArrayList<>();
         for (int i = 0; i < arr.length(); i++) {
             try {
                 JSONObject o = arr.getJSONObject(i);
-                String cat = trimTo(o.optString("category", ""));
-                String lbl = trimTo(o.optString("label", ""));
-                String txt = o.optString("text", "");
-                if (validate(entries.size(), cat, lbl, txt) == StoreResult.OK) {
-                    entries.add(new Entry(cat, lbl, txt.trim()));
-                    added++;
-                    changed = true;
-                }
+                imported.add(new Entry(
+                        trimTo(o.optString("category", "")),
+                        trimTo(o.optString("label", "")),
+                        o.optString("text", "")));
             } catch (Exception ignored) {
             }
         }
-        if (changed && !persist()) {
+        return imported;
+    }
+
+    private synchronized int mergeImported(List<Entry> imported) {
+        List<Entry> next = new ArrayList<>(entries);
+        Set<Entry> known = new HashSet<>(entries);
+        int added = 0;
+        for (Entry entry : imported) {
+            if (isBlank(entry.text) || entry.label.length() > LABEL_MAX
+                    || entry.text.trim().length() > TEXT_MAX
+                    || next.size() >= MAX_ENTRIES) {
+                continue;
+            }
+            Entry candidate = build(entry.category, entry.label, entry.text);
+            if (known.add(candidate)) {
+                next.add(candidate);
+                added++;
+            }
+        }
+        if (added > 0 && !persist(next)) {
             return -1;
+        }
+        if (added > 0) {
+            replaceEntries(next);
         }
         return added;
     }
@@ -188,27 +248,30 @@ public final class PhraseStore {
     }
 
     private void load() {
-        if (!file.exists()) {
-            return;
-        }
         try {
+            AtomicStore.recover(file);
+            if (!file.exists()) {
+                return;
+            }
             JSONArray arr = new JSONArray(AtomicStore.readUtf8(file));
+            List<Entry> loaded = new ArrayList<>();
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject o = arr.getJSONObject(i);
-                entries.add(new Entry(
+                loaded.add(new Entry(
                         trimTo(o.optString("category", "")),
                         trimTo(o.optString("label", "")),
                         o.optString("text", "")));
             }
+            replaceEntries(loaded);
         } catch (Exception ex) {
             entries.clear();
             AtomicStore.backupCorrupt(file);
         }
     }
 
-    private boolean persist() {
+    private boolean persist(List<Entry> target) {
         try {
-            AtomicStore.writeAtomic(file, toJson().toString().getBytes("UTF-8"));
+            AtomicStore.writeAtomic(file, toJson(target).toString().getBytes("UTF-8"));
             return true;
         } catch (Exception e) {
             return false;
@@ -216,8 +279,12 @@ public final class PhraseStore {
     }
 
     private JSONArray toJson() {
+        return toJson(entries);
+    }
+
+    private static JSONArray toJson(List<Entry> target) {
         JSONArray arr = new JSONArray();
-        for (Entry e : entries) {
+        for (Entry e : target) {
             JSONObject o = new JSONObject();
             try {
                 o.put("category", e.category);
@@ -228,6 +295,11 @@ public final class PhraseStore {
             }
         }
         return arr;
+    }
+
+    private void replaceEntries(List<Entry> next) {
+        entries.clear();
+        entries.addAll(next);
     }
 
     private static boolean isBlank(String s) {

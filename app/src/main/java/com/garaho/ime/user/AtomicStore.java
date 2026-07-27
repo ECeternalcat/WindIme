@@ -6,6 +6,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Atomic, corruption-aware file helpers shared by {@link UserDictionary} and
@@ -20,7 +21,7 @@ import java.io.InputStream;
  *
  * <p>Pure {@code java.io} so it is unit-testable on the host JVM.
  */
-final class AtomicStore {
+public final class AtomicStore {
 
     /** Maximum import file size: 10 MB. Guards against OOM from malicious files. */
     static final long MAX_IMPORT_BYTES = 10L * 1024 * 1024;
@@ -28,45 +29,63 @@ final class AtomicStore {
     private AtomicStore() {
     }
 
-    static void writeAtomic(File target, byte[] bytes) throws IOException {
-        File dir = target.getAbsoluteFile().getParentFile();
-        if (dir == null) {
-            throw new IOException("No parent directory for " + target);
-        }
-        if (!dir.exists() && !dir.mkdirs()) {
-            throw new IOException("Cannot create directory " + dir);
-        }
-        File tmp = new File(dir, target.getName() + ".tmp");
-        FileOutputStream out = new FileOutputStream(tmp);
-        try {
-            out.write(bytes);
-            out.flush();
+    private static volatile boolean failWritesForTests;
+    private static final ConcurrentHashMap<String, Object> PATH_LOCKS = new ConcurrentHashMap<>();
+
+    public static void writeAtomic(File target, byte[] bytes) throws IOException {
+        File normalized = normalize(target);
+        synchronized (lockFor(normalized)) {
+            if (failWritesForTests) {
+                throw new IOException("Injected write failure");
+            }
+            File dir = normalized.getParentFile();
+            if (dir == null) {
+                throw new IOException("No parent directory for " + normalized);
+            }
+            if (!dir.exists() && !dir.mkdirs()) {
+                throw new IOException("Cannot create directory " + dir);
+            }
+            recoverBackupLocked(normalized);
+            File tmp = new File(dir, normalized.getName() + ".tmp");
+            FileOutputStream out = new FileOutputStream(tmp);
             try {
-                out.getFD().sync();
-            } catch (IOException ignored) {
-                // sync is best-effort; some filesystems/devices reject it.
-            }
-        } finally {
-            out.close();
-        }
-        if (!tmp.renameTo(target)) {
-            // Rename can fail if the target already exists on some platforms.
-            // Delete-then-rename has a small TOCTOU window (audit M-3); retry
-            // once to tolerate a concurrent recreate in the private dir.
-            if (target.exists() && !target.delete()) {
-                throw new IOException("Cannot remove existing " + target);
-            }
-            if (!tmp.renameTo(target)) {
-                // Second attempt after a brief yield.
-                Thread.yield();
-                if (target.exists() && !target.delete()) {
-                    throw new IOException("Cannot remove existing " + target);
+                out.write(bytes);
+                out.flush();
+                try {
+                    out.getFD().sync();
+                } catch (IOException ignored) {
+                    // sync is best-effort; some filesystems/devices reject it.
                 }
-                if (!tmp.renameTo(target)) {
-                    throw new IOException("Cannot rename " + tmp + " to " + target);
+            } finally {
+                out.close();
+            }
+            if (tmp.renameTo(normalized)) {
+                return;
+            }
+
+            // Some File.renameTo implementations do not replace an existing file.
+            // Preserve it until the prepared replacement has been installed.
+            File backup = new File(dir, normalized.getName() + ".bak");
+            if (backup.exists() && !backup.delete()) {
+                throw new IOException("Cannot remove stale backup " + backup);
+            }
+            if (!normalized.exists() || !normalized.renameTo(backup)) {
+                throw new IOException("Cannot preserve existing " + normalized);
+            }
+            if (!tmp.renameTo(normalized)) {
+                if (!backup.renameTo(normalized)) {
+                    throw new IOException("Cannot install " + tmp + " or restore " + normalized);
                 }
+                throw new IOException("Cannot rename " + tmp + " to " + normalized);
+            }
+            if (!backup.delete()) {
+                backup.deleteOnExit();
             }
         }
+    }
+
+    static void setFailWritesForTests(boolean fail) {
+        failWritesForTests = fail;
     }
 
     static String readUtf8(File file) throws IOException {
@@ -78,17 +97,30 @@ final class AtomicStore {
      * Used by import paths to guard against OOM from oversized files.
      */
     static String readUtf8(File file, long maxBytes) throws IOException {
-        if (file.length() > maxBytes) {
-            throw new IOException("File too large: " + file.length() + " bytes (limit " + maxBytes + ")");
-        }
-        try (InputStream in = new FileInputStream(file)) {
-            ByteArrayOutputStream buf = new ByteArrayOutputStream();
-            byte[] tmp = new byte[4096];
-            int n;
-            while ((n = in.read(tmp)) > 0) {
-                buf.write(tmp, 0, n);
+        File normalized = normalize(file);
+        synchronized (lockFor(normalized)) {
+            recoverBackupLocked(normalized);
+            if (normalized.length() > maxBytes) {
+                throw new IOException("File too large: " + normalized.length()
+                        + " bytes (limit " + maxBytes + ")");
             }
-            return buf.toString("UTF-8");
+            try (InputStream in = new FileInputStream(normalized)) {
+                ByteArrayOutputStream buf = new ByteArrayOutputStream();
+                byte[] tmp = new byte[4096];
+                int n;
+                while ((n = in.read(tmp)) > 0) {
+                    buf.write(tmp, 0, n);
+                }
+                return buf.toString("UTF-8");
+            }
+        }
+    }
+
+    /** Restore an interrupted replacement before callers inspect target existence. */
+    public static void recover(File target) throws IOException {
+        File normalized = normalize(target);
+        synchronized (lockFor(normalized)) {
+            recoverBackupLocked(normalized);
         }
     }
 
@@ -100,13 +132,46 @@ final class AtomicStore {
      *         or the rename failed.
      */
     static File backupCorrupt(File file) {
-        if (file == null || !file.exists()) {
+        if (file == null) {
             return null;
         }
-        File backup = new File(file.getParentFile(), file.getName() + ".corrupt");
-        if (backup.exists() && !backup.delete()) {
-            return null;
+        File normalized = normalize(file);
+        synchronized (lockFor(normalized)) {
+            if (!normalized.exists()) {
+                return null;
+            }
+            File backup = new File(normalized.getParentFile(), normalized.getName() + ".corrupt");
+            if (backup.exists() && !backup.delete()) {
+                return null;
+            }
+            return normalized.renameTo(backup) ? backup : null;
         }
-        return file.renameTo(backup) ? backup : null;
+    }
+
+    private static void recoverBackupLocked(File target) throws IOException {
+        File backup = new File(target.getParentFile(), target.getName() + ".bak");
+        if (!backup.exists()) {
+            return;
+        }
+        if (target.exists()) {
+            backup.delete();
+        } else if (!backup.renameTo(target)) {
+            throw new IOException("Cannot restore backup " + backup);
+        }
+    }
+
+    private static File normalize(File file) {
+        try {
+            return file.getCanonicalFile();
+        } catch (IOException ignored) {
+            return file.getAbsoluteFile();
+        }
+    }
+
+    private static Object lockFor(File normalized) {
+        String path = normalized.getPath();
+        Object candidate = new Object();
+        Object existing = PATH_LOCKS.putIfAbsent(path, candidate);
+        return existing == null ? candidate : existing;
     }
 }
