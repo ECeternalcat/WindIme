@@ -182,8 +182,4 @@ public class PhraseActivity extends BaseMenuActivity {
         return R.string.settings_phrase;
     }
 
-    @Override
-    protected int getHintRes() {
-        return R.string.menu_hint_nav;
-    }
 }

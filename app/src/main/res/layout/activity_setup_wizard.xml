@@ -10,20 +10,12 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="@color/brand_primary_dark"
+        android:background="@color/brand_primary"
         android:minHeight="48dp"
         android:paddingStart="12dp"
         android:paddingEnd="12dp"
         android:paddingTop="8dp"
         android:paddingBottom="8dp">
-
-        <ImageView
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:layout_marginEnd="10dp"
-            android:adjustViewBounds="true"
-            android:src="@mipmap/ic_launcher"
-            android:contentDescription="@string/app_name" />
 
         <TextView
             android:layout_width="0dp"
@@ -32,8 +24,7 @@
             android:gravity="center_vertical"
             android:text="@string/title_setup_wizard"
             android:textColor="@color/candidate_focus_text"
-            android:textSize="18sp"
-            android:textStyle="bold" />
+            android:textSize="18sp" />
     </LinearLayout>
 
     <View
@@ -47,6 +38,15 @@
         android:layout_weight="1"
         android:orientation="vertical"
         android:padding="16dp">
+
+        <TextView
+            android:id="@+id/wizard_step"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/brand_primary"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:paddingBottom="8dp" />
 
         <TextView
             android:id="@+id/wizard_prompt"

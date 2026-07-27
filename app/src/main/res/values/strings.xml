@@ -135,8 +135,8 @@
     <string name="keymap_keycode_unknown">仅扫描码</string>
     <string name="keymap_mapping_format">%1$s：%2$s（kc=%3$d，sc=%4$d）</string>
     <string name="keymap_mapping_unbound">%1$s：未绑定</string>
-    <string name="wizard_back_as_delete_tip">可直接按机身返回键：绑定后先作为退格，内容为空时关闭输入法，再按一次恢复系统返回。</string>
-    <string name="wizard_softkey_tip">请按屏幕下方的对应软键（左/右）。此步骤可跳过。</string>
+    <string name="wizard_back_as_delete_tip">可直接按机身返回键</string>
+    <string name="wizard_softkey_tip">请按下屏幕下方对应按键，左键应为邮箱键，右键应为浏览器键\n正确绑定才能正常按系统方案触发</string>
     <string name="wizard_key_reserved">该键承担标准输入或导航功能，请按其他键。</string>
     <string name="wizard_key_duplicate">该键已绑定到前面的功能，请按其他键。</string>
     <string name="wizard_controls">OK/ENTER 或 → 跳过，← 返回上一步，BACK 取消。方向键和确认键不会被绑定。</string>
@@ -144,6 +144,11 @@
     <string name="wizard_done_summary">校准完成。新映射将在下一次打开输入框时生效。</string>
     <string name="wizard_done_controls">按 BACK 返回按键设置。</string>
     <string name="wizard_target_format">%1$s\n%2$s</string>
+    <string name="wizard_intro_title">校准前提示</string>
+    <string name="wizard_intro_general">通用操作：OK / ENTER 或 → 跳过当前步，← 返回上一步，BACK 取消。方向键与确认键不会被绑定。</string>
+    <string name="wizard_intro_backspace">退格删除：可直接按机身返回键。绑定后先作为退格；正文为空时再按一次关闭输入法；需要系统返回时再按一次。</string>
+    <string name="wizard_intro_softkey">左右软键：左键应为邮箱键，右键应为浏览器键。正确绑定才能正常按系统方案触发。</string>
+    <string name="wizard_intro_start">按 OK 开始校准</string>
     <string name="wizard_name_config">配置名称</string>
     <string name="wizard_save_and_use">保存并使用</string>
     <string name="wizard_saved_profile">已保存并切换到“%1$s”。新映射将在下一次打开输入框时生效。</string>

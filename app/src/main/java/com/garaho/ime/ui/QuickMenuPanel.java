@@ -103,10 +103,12 @@ public final class QuickMenuPanel {
         }
         switch (action) {
             case NAV_UP:
-                setSelection(selectedIndex - 1);
+                // Wrap cyclically: above the first row jumps to the last.
+                setSelection(selectedIndex - 1 < 0 ? items.length - 1 : selectedIndex - 1);
                 return true;
             case NAV_DOWN:
-                setSelection(selectedIndex + 1);
+                // Wrap cyclically: below the last row jumps to the first.
+                setSelection(selectedIndex + 1 >= items.length ? 0 : selectedIndex + 1);
                 return true;
             case CONFIRM_SELECTION:
                 if (callback != null) {

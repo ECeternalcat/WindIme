@@ -24,8 +24,6 @@ public abstract class BaseMenuActivity extends Activity {
         listView = findViewById(R.id.menu_list);
         TextView title = findViewById(R.id.menu_title);
         title.setText(getTitleRes());
-        TextView hint = findViewById(R.id.menu_hint);
-        hint.setText(getHintRes());
     }
 
     protected ListView getListView() {
@@ -42,9 +40,32 @@ public abstract class BaseMenuActivity extends Activity {
         }
     }
 
-    protected abstract int getTitleRes();
-
-    protected int getHintRes() {
-        return R.string.menu_hint_nav;
+    /**
+     * Wrap D-pad focus cyclically: at the top, UP jumps to the last row; at the
+     * bottom, DOWN jumps to the first. Intercepted in {@code dispatchKeyEvent}
+     * so it works regardless of whether the ListView consumes the boundary key.
+     */
+    @Override
+    public boolean dispatchKeyEvent(android.view.KeyEvent event) {
+        if (event.getAction() == android.view.KeyEvent.ACTION_DOWN && listView != null) {
+            int count = listView.getCount();
+            if (count > 0) {
+                int pos = listView.getSelectedItemPosition();
+                if (pos != android.widget.AdapterView.INVALID_POSITION) {
+                    int keyCode = event.getKeyCode();
+                    if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP && pos == 0) {
+                        listView.setSelection(count - 1);
+                        return true;
+                    }
+                    if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN && pos == count - 1) {
+                        listView.setSelection(0);
+                        return true;
+                    }
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event);
     }
+
+    protected abstract int getTitleRes();
 }

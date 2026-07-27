@@ -57,6 +57,10 @@
             android:name=".ui.SetupWizardActivity"
             android:exported="false"
             android:label="@string/title_setup_wizard" />
+        <activity
+            android:name=".ui.SetupWizardIntroActivity"
+            android:exported="false"
+            android:label="@string/wizard_intro_title" />
 
         <activity
             android:name=".settings.KeymapPromptActivity"

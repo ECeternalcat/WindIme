@@ -11,7 +11,7 @@
     <color name="primary_text">#FF111111</color>
 
     <!-- Brand header bar -->
-    <color name="brand_primary">#FF336699</color>
+    <color name="brand_primary">#FF0055AA</color>
     <color name="brand_primary_dark">#FF264A6E</color>
     <color name="brand_accent">#FF4A90C2</color>
 

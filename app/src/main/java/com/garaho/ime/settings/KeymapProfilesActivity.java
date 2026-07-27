@@ -142,7 +142,7 @@ public class KeymapProfilesActivity extends BaseMenuActivity {
     }
 
     private void launchCalibration(int slot) {
-        startActivity(new Intent(this, SetupWizardActivity.class)
+        startActivity(new Intent(this, com.garaho.ime.ui.SetupWizardIntroActivity.class)
                 .putExtra(SetupWizardActivity.EXTRA_TARGET_SLOT, slot));
     }
 

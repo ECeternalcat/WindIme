@@ -164,8 +164,4 @@ public class UserDictActivity extends BaseMenuActivity {
         return R.string.settings_user_dict;
     }
 
-    @Override
-    protected int getHintRes() {
-        return R.string.menu_hint_nav;
-    }
 }

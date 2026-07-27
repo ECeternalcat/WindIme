@@ -32,7 +32,6 @@ public class ModeLoopActivity extends Activity {
         setContentView(R.layout.activity_menu);
         prefs = new GarahoPrefs(this);
         ((android.widget.TextView) findViewById(R.id.menu_title)).setText(R.string.input_mode_loop);
-        ((android.widget.TextView) findViewById(R.id.menu_hint)).setText(R.string.menu_hint_toggle);
 
         allModes.add(InputMode.ZH);
         allModes.add(InputMode.ZH_MTAP);

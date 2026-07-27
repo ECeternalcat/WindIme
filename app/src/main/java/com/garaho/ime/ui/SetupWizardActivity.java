@@ -52,6 +52,7 @@ public class SetupWizardActivity extends Activity {
             InputAction.SOFTKEY_RIGHT,
     };
 
+    private TextView stepView;
     private TextView promptView;
     private TextView tipView;
     private TextView statusView;
@@ -71,6 +72,7 @@ public class SetupWizardActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_setup_wizard);
+        stepView = findViewById(R.id.wizard_step);
         promptView = findViewById(R.id.wizard_prompt);
         tipView = findViewById(R.id.wizard_tip);
         statusView = findViewById(R.id.wizard_status);
@@ -99,12 +101,16 @@ public class SetupWizardActivity extends Activity {
             return CORE_STEPS;
         }
         // On Kyocera feature phones the left/right soft keys are fixed by the
-        // vendor framework (menu / symbol), and DISMISS_IME is handled by the
-        // native center-OK "完成" protocol. Skip those calibration steps and
-        // instead calibrate the physical SOFTKEY_LEFT / SOFTKEY_RIGHT.
+        // vendor framework (menu / symbol), so SHOW_QUICK_MENU and
+        // SHOW_SYMBOL_PANEL are both handled by the physical soft keys and must
+        // not be calibrated separately; DISMISS_IME is handled by the native
+        // center-OK "完成" protocol. Skip those and instead calibrate the
+        // physical SOFTKEY_LEFT / SOFTKEY_RIGHT.
         java.util.ArrayList<InputAction> list = new java.util.ArrayList<>();
         for (InputAction a : CORE_STEPS) {
-            if (a == InputAction.SHOW_QUICK_MENU || a == InputAction.DISMISS_IME) {
+            if (a == InputAction.SHOW_QUICK_MENU
+                    || a == InputAction.SHOW_SYMBOL_PANEL
+                    || a == InputAction.DISMISS_IME) {
                 continue;
             }
             list.add(a);
@@ -205,28 +211,25 @@ public class SetupWizardActivity extends Activity {
             return;
         }
         InputAction a = steps[currentStep];
-        promptView.setText(getString(R.string.wizard_target_format,
-                KeymapProfilesActivity.slotName(this, targetSlot),
-                getString(R.string.wizard_press_action_prompt, displayName(a))));
+        stepView.setText(getString(R.string.wizard_step_format, currentStep + 1, steps.length));
+        promptView.setText(getString(R.string.wizard_press_action_prompt, displayName(a)));
         if (a == InputAction.BACKSPACE_DELETE) {
-            tipView.setText(getString(R.string.wizard_controls) + "\n"
-                    + getString(R.string.wizard_back_as_delete_tip));
+            tipView.setText(R.string.wizard_back_as_delete_tip);
             tipView.setVisibility(android.view.View.VISIBLE);
         } else if (a == InputAction.SOFTKEY_LEFT || a == InputAction.SOFTKEY_RIGHT) {
-            tipView.setText(getString(R.string.wizard_controls) + "\n"
-                    + getString(R.string.wizard_softkey_tip));
+            tipView.setText(R.string.wizard_softkey_tip);
             tipView.setVisibility(android.view.View.VISIBLE);
         } else {
-            tipView.setText(R.string.wizard_controls);
-            tipView.setVisibility(android.view.View.VISIBLE);
+            // Full instructions live on the pre-calibration notice page; the
+            // per-step highlight only carries the short action-specific hint.
+            tipView.setVisibility(android.view.View.GONE);
         }
         StringBuilder sb = new StringBuilder();
-        sb.append(getString(R.string.wizard_step_format, currentStep + 1, steps.length)).append('\n');
         for (Map.Entry<InputAction, KeyMapConfig.Mapping> e : captured.entrySet()) {
             sb.append(displayName(e.getKey()))
               .append(" -> sc=").append(e.getValue().scanCode)
               .append(" kc=").append(e.getValue().keycode)
-               .append('\n');
+                .append('\n');
         }
         for (InputAction action : skipped) {
             sb.append(displayName(action)).append(" -> ")
