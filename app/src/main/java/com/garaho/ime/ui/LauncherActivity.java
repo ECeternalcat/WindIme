@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.view.inputmethod.InputMethodManager;
 
+import com.garaho.ime.settings.GarahoPrefs;
 import com.garaho.ime.settings.ImeSetupActivity;
 import com.garaho.ime.settings.ImeStatus;
 import com.garaho.ime.settings.LauncherImeRouting;
@@ -19,6 +20,15 @@ public final class LauncherActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // The first-run wizard takes priority over IME-state routing; it walks
+        // the user through enabling the IME and calibrating keys, then marks
+        // itself complete so this branch is skipped on later launches.
+        if (!new GarahoPrefs(this).isFirstRunCompleted()) {
+            startActivity(new Intent(this, FirstRunWizardActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            finish();
+            return;
+        }
         LauncherImeRouting.Route route = LauncherImeRouting.decide(
                 ImeStatus.isEnabled(this), ImeStatus.isActive(this));
         switch (route) {

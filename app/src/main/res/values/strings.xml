@@ -222,4 +222,23 @@
     <string name="keymap_prompt_message">尚未创建按键配置，是否现在创建？</string>
     <string name="keymap_prompt_yes">创建</string>
     <string name="keymap_prompt_no">以后再说</string>
+
+    <!-- First-run wizard -->
+    <string name="firstrun_title">首次使用向导</string>
+    <string name="firstrun_step_format">第 %1$d 步 / 共 %2$d 步</string>
+    <string name="firstrun_welcome_title">欢迎！</string>
+    <string name="firstrun_welcome_body">接下来会带你完成首次使用配置。\n点击 OK 键继续</string>
+    <string name="firstrun_default_title">将 Wind IME 设置为默认输入法</string>
+    <string name="firstrun_default_action">设置默认输入法</string>
+    <string name="firstrun_default_pending">○ 尚未设置</string>
+    <string name="firstrun_default_done">✓ 已设为默认输入法</string>
+    <string name="firstrun_default_toast">请先设置默认输入法</string>
+    <string name="firstrun_calibrate_title">按键校准</string>
+    <string name="firstrun_calibrate_action">开始按键校准</string>
+    <string name="firstrun_calibrate_pending">○ 尚未校准</string>
+    <string name="firstrun_calibrate_done">✓ 已完成按键校准</string>
+    <string name="firstrun_calibrate_toast">请先完成按键校准</string>
+    <string name="firstrun_continue">继续</string>
+    <string name="firstrun_done_title">设置完毕！</string>
+    <string name="firstrun_done_body">开始体验全新的输入法吧！</string>
 </resources>

@@ -62,6 +62,11 @@
             android:label="@string/wizard_intro_title" />
 
         <activity
+            android:name=".ui.FirstRunWizardActivity"
+            android:exported="false"
+            android:label="@string/firstrun_title" />
+
+        <activity
             android:name=".settings.KeymapPromptActivity"
             android:exported="false"
             android:excludeFromRecents="true"

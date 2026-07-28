@@ -33,6 +33,7 @@ public final class GarahoPrefs {
     private static final String KEY_KEYMAP_PROMPT_DISMISSED = "keymap_prompt_dismissed";
     private static final String KEY_FULLSCREEN_COMPAT = "fullscreen_compat_packages";
     private static final String KEY_LAST_HOST_PACKAGE = "last_host_package";
+    private static final String KEY_FIRSTRUN_COMPLETED = "firstrun_completed";
 
     public static final String FEEDBACK_VIBRATE = "vibrate";
     public static final String FEEDBACK_SOUND = "sound";
@@ -189,6 +190,15 @@ public final class GarahoPrefs {
         if (pkg != null && !pkg.isEmpty()) {
             sp.edit().putString(KEY_LAST_HOST_PACKAGE, pkg).apply();
         }
+    }
+
+    /** Whether the first-run wizard has been completed. Reset by {@link #clearAll()}. */
+    public boolean isFirstRunCompleted() {
+        return sp.getBoolean(KEY_FIRSTRUN_COMPLETED, false);
+    }
+
+    public void setFirstRunCompleted(boolean done) {
+        sp.edit().putBoolean(KEY_FIRSTRUN_COMPLETED, done).apply();
     }
 
     /** Wipe every persisted preference, returning to compiled defaults. */
