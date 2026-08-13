@@ -20,6 +20,10 @@ final class PrivateMultiTapState {
     private long lastPressTime;
 
     Edit press(int digit, long eventTime, int timeoutMs) {
+        return press(digit, eventTime, timeoutMs, false);
+    }
+
+    Edit press(int digit, long eventTime, int timeoutMs, boolean uppercase) {
         if (!MultiTapCore.isMultiTapDigit(digit)) {
             return null;
         }
@@ -33,7 +37,8 @@ final class PrivateMultiTapState {
             index = 0;
         }
         lastPressTime = eventTime;
-        return new Edit(MultiTapCore.letter(digit, index), replace);
+        char c = MultiTapCore.letter(digit, index);
+        return new Edit(uppercase ? Character.toUpperCase(c) : c, replace);
     }
 
     void breakCycle() {

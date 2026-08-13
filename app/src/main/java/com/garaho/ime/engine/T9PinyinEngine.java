@@ -69,6 +69,31 @@ public final class T9PinyinEngine implements ImeEngine, LayeredPinyinEngine {
             return false;
         }
         String word = candidates.get(index);
+
+        // A leading-syllable candidate (for example 一 from yi'zhi) must not
+        // discard the uncommitted tail. Rebuild the session from the digits
+        // after the consumed prefix, then commit only this word.
+        String phrase = session.getPhraseKey();
+        int separator = phrase == null ? -1 : phrase.indexOf('\'');
+        if (separator > 0) {
+            String prefixKey = phrase.substring(0, separator);
+            if (PinyinDictionary.lookup(prefixKey).contains(word)) {
+                String consumedDigits = PinyinSyllables.t9Encode(prefixKey);
+                String allDigits = session.getDigits();
+                if (allDigits.startsWith(consumedDigits)
+                        && allDigits.length() > consumedDigits.length()) {
+                    String remaining = allDigits.substring(consumedDigits.length());
+                    session.reset();
+                    for (int i = 0; i < remaining.length(); i++) {
+                        session.processDigit(remaining.charAt(i) - '0');
+                    }
+                    recompute();
+                    fire(word);
+                    return true;
+                }
+            }
+        }
+
         session.reset();
         candidates = Collections.emptyList();
         composing = "";
@@ -156,19 +181,37 @@ public final class T9PinyinEngine implements ImeEngine, LayeredPinyinEngine {
             return Collections.emptyList();
         }
         LinkedHashSet<String> out = new LinkedHashSet<>();
-        for (String word : PinyinDictionary.lookup(phraseKey)) {
-            out.add(word);
-            if (out.size() >= MAX_CANDIDATES) {
-                return new ArrayList<>(out);
-            }
-        }
+
+        // Flip-phone input is syllable-by-syllable: for hou'xuan show hou
+        // first, then keep xuan for the next selection. Do not let a full
+        // phrase such as 候选 bypass that interaction.
         int separator = phraseKey.indexOf('\'');
         if (separator > 0) {
-            for (String word : PinyinDictionary.lookup(phraseKey.substring(0, separator))) {
+            String firstSyllable = phraseKey.substring(0, separator);
+            // Keep the staged syllable flow as the default ordering.
+            for (String word : PinyinDictionary.lookup(firstSyllable)) {
                 out.add(word);
                 if (out.size() >= MAX_CANDIDATES) {
                     break;
                 }
+            }
+            // Still expose a complete phrase such as 测试 after the current
+            // syllable candidates, so the fast whole-word path is available.
+            if (out.size() < MAX_CANDIDATES) {
+                for (String word : PinyinDictionary.lookup(phraseKey)) {
+                    out.add(word);
+                    if (out.size() >= MAX_CANDIDATES) {
+                        break;
+                    }
+                }
+            }
+            return new ArrayList<>(out);
+        }
+
+        for (String word : PinyinDictionary.lookup(phraseKey)) {
+            out.add(word);
+            if (out.size() >= MAX_CANDIDATES) {
+                return new ArrayList<>(out);
             }
         }
         return new ArrayList<>(out);

@@ -43,5 +43,18 @@
             android:paddingEnd="16dp"
             android:paddingBottom="16dp"
             android:scaleType="fitCenter" />
+
+        <TextView
+            android:id="@+id/easter_egg_maintainers"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="16dp"
+            android:paddingTop="16dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="24dp"
+            android:text="@string/easter_egg_maintainers"
+            android:textColor="@color/primary_text"
+            android:textSize="14sp"
+            android:lineSpacingExtra="4dp" />
     </LinearLayout>
 </ScrollView>

@@ -36,6 +36,7 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
     private List<String> candidates = Collections.emptyList();
     private String composing = "";
     private String currentPhraseKey = "";
+    private String lastFedLetters = "";
     private com.garaho.ime.user.UserWordSource userWords;
 
     public void setUserWordSource(com.garaho.ime.user.UserWordSource src) {
@@ -205,6 +206,14 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
             return false;
         }
         String chosen = candidates.get(index);
+
+        // Rime may expose a leading-character candidate for a multi-syllable
+        // composition. Commit that prefix while rebuilding Rime with the
+        // remaining digits, instead of clearing the whole composition.
+        if (commitPrefixAndKeepTail(chosen)) {
+            return true;
+        }
+
         int nativeIndex = nativeCandidates.indexOf(chosen);
         if (nativeIndex < 0) {
             // User-word fast path: the chosen word came from the user
@@ -237,6 +246,33 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
                 ? commit.text
                 : (chosen != null ? chosen : "");
         clearAfterCommit(text);
+        return true;
+    }
+
+    private boolean commitPrefixAndKeepTail(String chosen) {
+        String phrase = session.getPhraseKey();
+        int separator = phrase == null ? -1 : phrase.indexOf('\'');
+        if (separator <= 0) {
+            return false;
+        }
+        String prefixKey = phrase.substring(0, separator);
+        if (!PinyinDictionary.lookup(prefixKey).contains(chosen)) {
+            return false;
+        }
+        String consumed = PinyinSyllables.t9Encode(prefixKey);
+        String digits = session.getDigits();
+        if (!digits.startsWith(consumed) || digits.length() <= consumed.length()) {
+            return false;
+        }
+        String remaining = digits.substring(consumed.length());
+        session.reset();
+        for (int i = 0; i < remaining.length(); i++) {
+            session.processDigit(remaining.charAt(i) - '0');
+        }
+        if (listener != null) {
+            listener.onCommit(chosen);
+        }
+        pushPhraseToRime();
         return true;
     }
 
@@ -310,24 +346,27 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
         String letters = phraseKey;
         currentPhraseKey = phraseKey;
         composing = session.getComposing();
-        Log.d(TAG, "pushPhrase length=" + buf.length());
+        boolean appended = !lastFedLetters.isEmpty()
+                && letters.startsWith(lastFedLetters);
         try {
-            Rime.clearRimeComposition();
+            if (!appended) {
+                Rime.clearRimeComposition();
+            }
         } catch (Throwable t) {
             Log.w(TAG, "clearRimeComposition failed: " + t);
         }
-        if (!letters.isEmpty()) {
+        String feed = appended ? letters.substring(lastFedLetters.length()) : letters;
+        if (!feed.isEmpty()) {
             boolean ok = false;
             try {
-                ok = Rime.simulateRimeKeySequence(letters);
+                ok = Rime.simulateRimeKeySequence(feed);
             } catch (Throwable t) {
                 Log.w(TAG, "simulateRimeKeySequence threw: " + t);
             }
-            Log.d(TAG, "simulateRimeKeySequence ok=" + ok + " length=" + letters.length());
             if (!ok) {
-                for (int i = 0; i < letters.length(); i++) {
+                for (int i = 0; i < feed.length(); i++) {
                     try {
-                        Rime.processRimeKey((int) letters.charAt(i), 0);
+                        Rime.processRimeKey((int) feed.charAt(i), 0);
                     } catch (Throwable t) {
                         Log.w(TAG, "processRimeKey failed at index " + i, t);
                         break;
@@ -335,11 +374,17 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
                 }
             }
         }
+        lastFedLetters = letters;
         refresh();
     }
 
     private void refresh() {
         List<String> list = new ArrayList<>();
+        String prefixCandidateKey = firstSyllableOf(currentPhraseKey);
+
+        // Always read Rime's candidates first.  The phone-specific, staged
+        // syllable candidates below are only a fallback/extra set; they must
+        // never displace a real Rime phrase at the head of the candidate bar.
         CandidateProto[] arr = null;
         try {
             arr = Rime.getRimeCandidates(0, FETCH_LIMIT);
@@ -355,16 +400,45 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
         }
         Log.d(TAG, "getRimeCandidates -> count=" + (arr == null ? -1 : arr.length)
                 + " usable=" + list.size());
-        nativeCandidates = list;
-        candidates = com.garaho.ime.user.UserWordSource.merge(currentPhraseKey, list, userWords);
+        List<String> rimeCandidates = new ArrayList<>(list);
+        // User-added words come after the native Rime dictionary.  This keeps
+        // the learned/custom entries available without stealing Rime's first
+        // candidate position.
+        list = com.garaho.ime.user.UserWordSource.append(
+                currentPhraseKey, rimeCandidates, userWords);
+        if (prefixCandidateKey != null) {
+            // Append the manually selectable first-syllable candidates after
+            // Rime and user words. LinkedHashSet keeps order and removes
+            // duplicates.
+            java.util.LinkedHashSet<String> combined =
+                    new java.util.LinkedHashSet<>(list);
+            combined.addAll(PinyinDictionary.lookup(prefixCandidateKey));
+            list = new ArrayList<>(combined);
+        }
+        nativeCandidates = rimeCandidates;
+        candidates = list;
         CommitProto pending = safeCommit();
         if (listener != null) {
             if (pending != null && pending.text != null && !pending.text.isEmpty()) {
                 listener.onCommit(pending.text);
             }
+            notifyCandidates();
+        }
+    }
+
+    private void notifyCandidates() {
+        if (listener != null) {
             listener.onComposingChanged(composing);
             listener.onCandidatesChanged(candidates);
         }
+    }
+
+    private static String firstSyllableOf(String phraseKey) {
+        if (phraseKey == null) {
+            return null;
+        }
+        int separator = phraseKey.indexOf('\'');
+        return separator > 0 ? phraseKey.substring(0, separator) : null;
     }
 
     private static CommitProto safeCommit() {
@@ -387,6 +461,7 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
         composing = "";
         candidates = Collections.emptyList();
         nativeCandidates = Collections.emptyList();
+        lastFedLetters = "";
         if (listener != null) {
             listener.onCommit(text);
             listener.onComposingChanged(composing);

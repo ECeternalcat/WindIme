@@ -15,6 +15,7 @@ public final class PinyinSession {
     private boolean confirmed;
     private boolean partialSelectionPinned;
     private boolean completeSelectionPinned;
+    private int leadingSelectedIndex = -1;
 
     public boolean processDigit(int digit) {
         if (digit < 2 || digit > 9) {
@@ -53,8 +54,12 @@ public final class PinyinSession {
     }
 
     public boolean preview(int index) {
-        if (index < 0 || index >= layer.tailOptions.size()) {
+        if (index < 0 || index >= getOptions().size()) {
             return false;
+        }
+        if (!layer.prefix.isEmpty()) {
+            leadingSelectedIndex = index;
+            return true;
         }
         selectedIndex = index;
         confirmed = false;
@@ -67,6 +72,12 @@ public final class PinyinSession {
     public boolean confirm(int index) {
         if (!preview(index)) {
             return false;
+        }
+        if (!layer.prefix.isEmpty()) {
+            String option = getOptions().get(leadingSelectedIndex);
+            return PinyinSyllables.isSyllable(option)
+                    && PinyinSyllables.t9Encode(option)
+                    .equals(PinyinSyllables.t9Encode(layer.prefix.get(0)));
         }
         String option = selectedOption();
         if (!PinyinSyllables.isSyllable(option)
@@ -86,19 +97,27 @@ public final class PinyinSession {
         confirmed = false;
         partialSelectionPinned = false;
         completeSelectionPinned = false;
+        leadingSelectedIndex = -1;
     }
 
     public List<String> getOptions() {
+        if (!layer.prefix.isEmpty()) {
+            return PinyinLayer.optionsForDigits(
+                    PinyinSyllables.t9Encode(layer.prefix.get(0)));
+        }
         return layer.tailOptions;
     }
 
     public int getSelectedIndex() {
+        if (!layer.prefix.isEmpty()) {
+            return leadingSelectedIndex >= 0 ? leadingSelectedIndex : 0;
+        }
         return selectedIndex;
     }
 
     public String getPhraseKey() {
         List<String> parts = new ArrayList<>(lockedSyllables);
-        parts.addAll(layer.prefix);
+        parts.addAll(resolvedPrefix());
         String option = selectedOption();
         if (isCompleteOption(option)) {
             parts.add(option);
@@ -111,7 +130,7 @@ public final class PinyinSession {
         String option = selectedOption();
         if (!isCompleteOption(option)) {
             List<String> parts = new ArrayList<>(lockedSyllables);
-            parts.addAll(layer.prefix);
+            parts.addAll(resolvedPrefix());
             if (!option.isEmpty()) {
                 parts.add(option);
             }
@@ -141,7 +160,7 @@ public final class PinyinSession {
     }
 
     private void lockCurrentSelection() {
-        lockedSyllables.addAll(layer.prefix);
+        lockedSyllables.addAll(resolvedPrefix());
         String option = selectedOption();
         if (!option.isEmpty()) {
             lockedSyllables.add(option);
@@ -152,6 +171,7 @@ public final class PinyinSession {
         confirmed = false;
         partialSelectionPinned = false;
         completeSelectionPinned = false;
+        leadingSelectedIndex = -1;
     }
 
     private void recompute(String preferredOption) {
@@ -160,6 +180,7 @@ public final class PinyinSession {
         confirmed = false;
         partialSelectionPinned = false;
         completeSelectionPinned = false;
+        leadingSelectedIndex = -1;
     }
 
     private void recomputeWithPrefix(String preferredPrefix) {
@@ -179,6 +200,7 @@ public final class PinyinSession {
         selectedIndex = preferredIndex(null);
         confirmed = false;
         partialSelectionPinned = false;
+        leadingSelectedIndex = -1;
     }
 
     private int preferredIndex(String explicit) {
@@ -218,6 +240,34 @@ public final class PinyinSession {
             return "";
         }
         return layer.tailOptions.get(selectedIndex);
+    }
+
+    /**
+     * Return the prefix with the leading syllable replaced by the user's
+     * selection (if any).  When the user navigates to "zhe" while the
+     * segmenter defaulted to "xie", this returns ["zhe", ...] instead
+     * of the raw ["xie", ...].
+     */
+    private List<String> resolvedPrefix() {
+        if (layer.prefix.isEmpty() || leadingSelectedIndex < 0) {
+            return layer.prefix;
+        }
+        List<String> opts = PinyinLayer.optionsForDigits(
+                PinyinSyllables.t9Encode(layer.prefix.get(0)));
+        if (leadingSelectedIndex >= opts.size()) {
+            return layer.prefix;
+        }
+        String chosen = opts.get(leadingSelectedIndex);
+        if (!PinyinSyllables.isSyllable(chosen)) {
+            return layer.prefix;
+        }
+        if (!PinyinSyllables.t9Encode(chosen)
+                .equals(PinyinSyllables.t9Encode(layer.prefix.get(0)))) {
+            return layer.prefix;
+        }
+        List<String> result = new ArrayList<>(layer.prefix);
+        result.set(0, chosen);
+        return result;
     }
 
     private boolean isCompleteOption(String option) {

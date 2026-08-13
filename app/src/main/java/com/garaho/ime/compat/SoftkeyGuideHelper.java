@@ -121,4 +121,44 @@ public final class SoftkeyGuideHelper {
             return false;
         }
     }
+
+    /**
+     * Best-effort SHF33/NFP floating guide label. The Sharp framework has
+     * shipped more than one signature, so probe the available method instead
+     * of linking against a vendor-only stub.
+     */
+    public boolean setFloatingGuideAreaLabel(Window window, int index, CharSequence label) {
+        if (window == null) {
+            return false;
+        }
+        try {
+            Method get = guideClass.getMethod("getSoftkeyGuide", Window.class);
+            Object guide = get.invoke(null, window);
+            if (guide == null) {
+                return false;
+            }
+            for (Method method : guide.getClass().getMethods()) {
+                if (!"setFloatingGuideAreaText".equals(method.getName())) {
+                    continue;
+                }
+                Class<?>[] p = method.getParameterTypes();
+                if (p.length == 2 && (p[0] == int.class || p[0] == Integer.class)) {
+                    method.invoke(guide, index, label == null ? "" : label);
+                    invalidate(guide);
+                    return true;
+                }
+                if (p.length == 1 && CharSequence.class.isAssignableFrom(p[0])) {
+                    method.invoke(guide, label == null ? "" : label);
+                    invalidate(guide);
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private static void invalidate(Object guide) throws Exception {
+        guide.getClass().getMethod("invalidate").invoke(guide);
+    }
 }
