@@ -118,12 +118,20 @@ public class CandidateBar extends LinearLayout {
     }
 
     public void setBackendStatus(String status) {
-        backendStatus.setText(status == null ? "" : status);
+        String next = status == null ? "" : status;
+        if (next.contentEquals(backendStatus.getText())) {
+            return;
+        }
+        backendStatus.setText(next);
         backendStatus.setVisibility(status == null || status.isEmpty() ? View.GONE : View.VISIBLE);
     }
 
     public void setComposingText(CharSequence text) {
-        this.composingText = text == null ? "" : text;
+        CharSequence next = text == null ? "" : text;
+        if (android.text.TextUtils.equals(this.composingText, next)) {
+            return;
+        }
+        this.composingText = next;
         renderHeader();
     }
 
@@ -137,7 +145,11 @@ public class CandidateBar extends LinearLayout {
     }
 
     public void setCandidates(String[] candidates) {
-        this.candidates = candidates == null ? new String[0] : Arrays.copyOf(candidates, candidates.length);
+        String[] next = candidates == null ? new String[0] : candidates;
+        if (Arrays.equals(this.candidates, next)) {
+            return;
+        }
+        this.candidates = Arrays.copyOf(next, next.length);
         // Refresh correction (improvement doc §3): a fresh candidate list
         // always starts at the top, so a stale focus index can never commit a
         // word that is no longer the one the user sees highlighted.
@@ -147,6 +159,10 @@ public class CandidateBar extends LinearLayout {
 
     public void setPinyinOptions(String[] options, int selectedIndex) {
         String[] next = options == null ? new String[0] : Arrays.copyOf(options, options.length);
+        if (Arrays.equals(this.pinyinOptions, next)
+                && (next.length == 0 || this.pinyinFocusIndex == selectedIndex)) {
+            return;
+        }
         boolean firstLayeredState = pinyinOptions.length == 0 && next.length > 0;
         pinyinOptions = next;
         if (pinyinOptions.length == 0) {
@@ -157,10 +173,49 @@ public class CandidateBar extends LinearLayout {
                     ? selectedIndex
                     : Math.min(pinyinFocusIndex, pinyinOptions.length - 1);
             if (firstLayeredState) {
-                activeLayer = InputLayer.PINYIN;
+                // When the engine already has word candidates, focus those
+                // first. The pinyin row is the reading selector and should be
+                // reached with UP; this matches the syllable-by-syllable
+                // flip-phone flow (ce -> 测, then shi -> 试).
+                activeLayer = this.candidates.length > 0
+                        ? InputLayer.CANDIDATE : InputLayer.PINYIN;
             }
         }
         pinyinRow.setVisibility(pinyinOptions.length > 0 ? View.VISIBLE : View.GONE);
+        render();
+    }
+
+    /** Update both layered rows with one layout/render pass. */
+    public void setCandidatesAndPinyinOptions(String[] nextCandidates,
+                                               String[] options,
+                                               int selectedIndex) {
+        String[] next = nextCandidates == null ? new String[0] : nextCandidates;
+        String[] nextPinyin = options == null ? new String[0] : options;
+        boolean candidatesSame = Arrays.equals(this.candidates, next);
+        boolean pinyinSame = Arrays.equals(this.pinyinOptions, nextPinyin)
+                && (nextPinyin.length == 0 || this.pinyinFocusIndex == selectedIndex);
+        if (candidatesSame && pinyinSame) {
+            return;
+        }
+        this.candidates = Arrays.copyOf(next, next.length);
+        if (!candidatesSame) {
+            candidateFocusIndex = 0;
+        }
+        boolean firstLayeredState = pinyinOptions.length == 0 && nextPinyin.length > 0;
+        this.pinyinOptions = Arrays.copyOf(nextPinyin, nextPinyin.length);
+        if (nextPinyin.length == 0) {
+            pinyinFocusIndex = 0;
+            activeLayer = InputLayer.CANDIDATE;
+        } else {
+            pinyinFocusIndex = selectedIndex >= 0 && selectedIndex < nextPinyin.length
+                    ? selectedIndex
+                    : Math.min(pinyinFocusIndex, nextPinyin.length - 1);
+            if (firstLayeredState) {
+                activeLayer = this.candidates.length > 0
+                        ? InputLayer.CANDIDATE : InputLayer.PINYIN;
+            }
+        }
+        pinyinRow.setVisibility(nextPinyin.length > 0 ? View.VISIBLE : View.GONE);
         render();
     }
 
@@ -235,6 +290,18 @@ public class CandidateBar extends LinearLayout {
             activeLayer = InputLayer.PINYIN;
             render();
         }
+    }
+
+    /** Select the useful default layer after a digit was typed. */
+    public void activateDefaultLayer() {
+        if (candidates.length > 0) {
+            activeLayer = InputLayer.CANDIDATE;
+        } else if (pinyinOptions.length > 0) {
+            activeLayer = InputLayer.PINYIN;
+        } else {
+            activeLayer = InputLayer.CANDIDATE;
+        }
+        render();
     }
 
     public void resetCandidateFocus() {
@@ -313,7 +380,10 @@ public class CandidateBar extends LinearLayout {
             @Override
             public void run() {
                 int target = Math.max(0, focus.getLeft() - 2);
-                candidateScroll.smoothScrollTo(target, 0);
+                // D-pad input should move immediately; smooth scrolling queues
+                // animations on every key press and is noticeably laggy on 1GB
+                // flip-phone hardware.
+                candidateScroll.scrollTo(target, 0);
             }
         });
     }

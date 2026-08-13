@@ -85,6 +85,10 @@ public final class PinyinLayer {
         return new ArrayList<>(out);
     }
 
+    public static List<String> optionsForDigits(String digits) {
+        return tailOptionsFor(digits);
+    }
+
     private static List<String> splitPhraseKey(String phraseKey) {
         List<String> out = new ArrayList<>();
         if (phraseKey == null || phraseKey.isEmpty()) {

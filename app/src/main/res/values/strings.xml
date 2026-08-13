@@ -71,6 +71,7 @@
     <string name="license_rime_attribution">Rime / librime\nCopyright © 2014 RIME Developers\n\n依据 BSD 3-Clause License 发布。完整许可证正文如下：</string>
     <string name="easter_egg_title">哇哦，你居然找到这里来了？！</string>
     <string name="easter_egg_subtitle">既然来了，那请看开发者早期珍贵影像吧。</string>
+    <string name="easter_egg_maintainers">【开发与维护团队】\nECeternalcat(EC)\nWafer233(硅片)\n\n感谢所有为 Wind IME 做出贡献的朋友！</string>
 
     <string name="input_mode_loop">模式循环</string>
     <string name="input_default_ime">设置默认输入法</string>

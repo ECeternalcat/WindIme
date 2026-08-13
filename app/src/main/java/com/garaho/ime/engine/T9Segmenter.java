@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Shared T9 digit-string segmenter (design doc §3.3.2 T9 拼音).
@@ -17,6 +19,14 @@ import java.util.List;
 public final class T9Segmenter {
 
     public static final int MAX_SEGMENTATIONS = 64;
+    private static final int CACHE_SIZE = 32;
+    private static final Map<String, Segment> BEST_EFFORT_CACHE =
+            new LinkedHashMap<String, Segment>(CACHE_SIZE + 1, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Segment> eldest) {
+                    return size() > CACHE_SIZE;
+                }
+            };
 
     private static final Comparator<List<String>> BY_PHRASE_HIT = new Comparator<List<String>>() {
         @Override
@@ -171,6 +181,12 @@ public final class T9Segmenter {
         if (digits == null || digits.isEmpty()) {
             return new Segment("", "");
         }
+        synchronized (BEST_EFFORT_CACHE) {
+            Segment cached = BEST_EFFORT_CACHE.get(digits);
+            if (cached != null) {
+                return cached;
+            }
+        }
         StringBuilder phrase = new StringBuilder();
         int i = 0;
         while (i < digits.length()) {
@@ -194,7 +210,11 @@ public final class T9Segmenter {
             phrase.append(chosen);
             i += chosenLen;
         }
-        return new Segment(phrase.toString(), digits.substring(i));
+        Segment result = new Segment(phrase.toString(), digits.substring(i));
+        synchronized (BEST_EFFORT_CACHE) {
+            BEST_EFFORT_CACHE.put(digits, result);
+        }
+        return result;
     }
 
     /** Strip apostrophe separators so a phrase key can be fed to rime as letters. */

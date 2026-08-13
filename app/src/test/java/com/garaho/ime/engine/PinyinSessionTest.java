@@ -118,6 +118,38 @@ public class PinyinSessionTest {
         assertEquals("ni'hao", session.getPhraseKey());
     }
 
+    @Test
+    public void previewLeadingPrefixUpdatesPhraseKey() {
+        // 943744: default segmentation is xie'shi
+        PinyinSession session = type("943744");
+        // getOptions() exposes readings for the prefix digit code (943 = xie/zhe/...)
+        int zhe = session.getOptions().indexOf("zhe");
+        assertTrue("zhe must appear in options", zhe >= 0);
+
+        assertTrue(session.preview(zhe));
+        assertEquals("zhe'shi", session.getPhraseKey());
+        assertEquals("zhe'shi", session.getComposing());
+    }
+
+    @Test
+    public void previewLeadingPrefixLocksCorrectly() {
+        // After previewing zhe for 943744, continuing to type should lock zhe
+        PinyinSession session = type("943744");
+        int zhe = session.getOptions().indexOf("zhe");
+        assertTrue(session.preview(zhe));
+        assertEquals("zhe'shi", session.getPhraseKey());
+
+        // Confirm the prefix selection and type more digits
+        assertTrue(session.confirm(zhe));
+        assertTrue(session.processDigit(4));
+        assertTrue(session.processDigit(2));
+        assertTrue(session.processDigit(6));
+
+        // The locked syllables should contain zhe and shi (not xie)
+        assertTrue(session.getLockedSyllables().contains("zhe"));
+        assertTrue(session.getLockedSyllables().contains("shi"));
+    }
+
     private static PinyinSession type(String digits) {
         PinyinSession session = new PinyinSession();
         for (int i = 0; i < digits.length(); i++) {

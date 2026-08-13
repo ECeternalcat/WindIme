@@ -93,6 +93,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private boolean inputViewActive;
     private boolean privateInput;
     private boolean privateDirectDigits;
+    /** Password-field mode: false = English multi-tap, true = direct digits. */
+    private boolean privateNumericMode;
+    private boolean privateUppercase;
     private int expectedPrivateSelectionDelta = -1;
     private boolean suppressEngineCallbacks;
     private final PrivateMultiTapState privateMultiTapState = new PrivateMultiTapState();
@@ -176,6 +179,11 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     @Override
     public boolean onEvaluateFullscreenMode() {
+        // Password fields on flip phones are easier to use in the native
+        // extract/fullscreen layout, just like the vendor IME.
+        if (privateInput) {
+            return true;
+        }
         // Only opt into the framework's fullscreen/extract layout for host
         // packages whose own EditText the framework blanks in extract mode (so
         // the native ExtractEditText is needed to show the text + cursor, like
@@ -258,11 +266,13 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         privateInput = attribute != null
                 && PrivateInputPolicy.isPrivateField(attribute.inputType, attribute.imeOptions);
         privateDirectDigits = privateInput && PrivateInputPolicy.usesDirectDigits(attribute.inputType);
+        privateNumericMode = privateDirectDigits;
+        privateUppercase = false;
         if (privateInput || wasPrivateInput) {
             clearAllEngineState();
         }
         if (privateInput) {
-            showModeBar = false;
+            showModeBar = true;
             dismissPrivatePanels();
             clearCandidateUi();
         }
@@ -286,9 +296,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         activeFinish = false;
         adoptReadyRimeEngine();
         if (privateInput) {
-            showModeBar = false;
+            showModeBar = true;
             dismissPrivatePanels();
-            clearCandidateUi();
+            updatePrivateModeBar();
         } else {
             enterModeBar();
         }
@@ -646,6 +656,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 candidateBar.setBackendStatus(null);
                 break;
             case FAILED:
+                // Keep the failure visible: the bundled lightweight fallback
+                // still works, but the user should know that Rime/雾凇 did not
+                // finish preparing and may need a redeploy from settings.
                 candidateBar.setBackendStatus(getString(R.string.rime_status_failed_short));
                 break;
             case LIGHTWEIGHT:
@@ -966,21 +979,32 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private boolean handlePrivateAction(InputAction action) {
         int digit = action.digit();
         if (digit >= 0) {
-            if (privateDirectDigits || digit < 2) {
+            if (privateNumericMode || privateDirectDigits || digit < 2) {
                 privateMultiTapState.breakCycle();
                 commitChar((char) ('0' + digit));
                 return true;
             }
             PrivateMultiTapState.Edit edit = privateMultiTapState.press(
-                    digit, android.os.SystemClock.uptimeMillis(), privateMultiTapTimeoutMs());
+                    digit, android.os.SystemClock.uptimeMillis(), privateMultiTapTimeoutMs(),
+                    privateUppercase);
             applyPrivateEdit(edit);
             return true;
         }
         privateMultiTapState.breakCycle();
         switch (action) {
+            case TOGGLE_LANG_MODE:
+            case SOFTKEY_LEFT:
+                privateNumericMode = !privateNumericMode;
+                updatePrivateModeBar();
+                refreshSoftkeyGuide();
+                return true;
             case INPUT_KEY_STAR:
+                // Symbols, phrases and their shortcuts are disabled in private fields.
+                return true;
             case INPUT_KEY_POUND:
                 // Symbols, phrases and their shortcuts are disabled in private fields.
+                privateUppercase = !privateUppercase;
+                updatePrivateModeBar();
                 return true;
             case BACKSPACE_DELETE:
                 return deleteFromEditor();
@@ -1003,6 +1027,20 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 // Prediction, modes, symbols, phrases and menus stay disabled.
                 return true;
         }
+    }
+
+    /** Render the small En/123 selector used while editing password fields. */
+    private void updatePrivateModeBar() {
+        if (candidateBar == null || !privateInput) {
+            return;
+        }
+        String enLabel = privateUppercase ? "EN" : "en";
+        String[] labels = new String[] {enLabel, "123"};
+        candidateBar.setModeBar(labels, privateNumericMode ? 1 : 0);
+        candidateBar.showModeBar(true);
+        candidateBar.setComposingText("");
+        candidateBar.setCandidates(new String[0]);
+        candidateBar.setPinyinOptions(new String[0], -1);
     }
 
     private int privateMultiTapTimeoutMs() {
@@ -1119,7 +1157,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (digit >= 2 && digit <= 9) {
             boolean processed = active.processDigit(digit);
             if (processed && active instanceof LayeredPinyinEngine && candidateBar != null) {
-                candidateBar.activatePinyinLayer();
+                candidateBar.activateDefaultLayer();
             }
             return processed;
         }
@@ -1322,12 +1360,18 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             w = getWindow().getWindow();
         } catch (Throwable ignored) {
         }
+        // Password-mode language hint belongs in the lower/floating guide
+        // area on SHF33, not in the upper action-label row.
         CharSequence sk1 = !privateInput && hasSoftkeyLeftBinding()
                 ? getString(R.string.softkey_menu) : "";
         CharSequence sk2 = !privateInput && hasSoftkeyRightBinding()
                 ? getString(R.string.softkey_symbol) : "";
         CharSequence csk = isSoftkeyCompleteState() ? getString(R.string.softkey_complete) : "";
         softkeyGuide.setAllLabels(w, sk1, sk2, csk);
+        if (privateInput) {
+            softkeyGuide.setFloatingGuideAreaLabel(
+                    w, SoftkeyGuideHelper.INDEX_SK1, "中/英");
+        }
     }
 
     /** True if the active keymap has a physical key bound to SOFTKEY_LEFT. */
@@ -1875,17 +1919,17 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (privateInput || suppressEngineCallbacks) {
             return;
         }
-        Log.d(TAG, "onCandidatesChanged count=" + candidates.size());
         if (candidateBar != null) {
-            candidateBar.setCandidates(candidates.toArray(new String[0]));
+            String[] candidateArray = candidates.toArray(new String[0]);
             ImeEngine active = activeEngine();
             if (active instanceof LayeredPinyinEngine) {
                 LayeredPinyinEngine layered = (LayeredPinyinEngine) active;
-                candidateBar.setPinyinOptions(
+                candidateBar.setCandidatesAndPinyinOptions(
+                        candidateArray,
                         layered.getPinyinOptions().toArray(new String[0]),
                         layered.getSelectedPinyinIndex());
             } else {
-                candidateBar.setPinyinOptions(new String[0], -1);
+                candidateBar.setCandidatesAndPinyinOptions(candidateArray, new String[0], -1);
             }
         }
         refreshSoftkeyGuide();

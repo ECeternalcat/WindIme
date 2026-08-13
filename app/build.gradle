@@ -19,10 +19,10 @@ android {
 
     defaultConfig {
         applicationId "com.garaho.ime"
-        minSdk 21
+        minSdk 19
         targetSdk 28
-        versionCode 21
-        versionName "0.5.4"
+        versionCode 22
+        versionName "0.5.5"
 
         // Prebuilt librime_jni.so ships only for armeabi-v7a (doc target
         // hardware: flip-phones). On other ABIs System.loadLibrary fails and
