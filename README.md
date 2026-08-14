@@ -13,7 +13,7 @@
 ## 功能特性
 
 ### 五状态输入模式（单键循环，iWnn 风格）
-方向键 ◀▶ 在模式条上快速切换；打字时只显示当前模式。
+通过设备语言切换键切换；打字时只显示当前模式。
 
 | 状态 | 说明 |
 |---|---|
@@ -57,11 +57,6 @@
 - **重置**：切换默认按键映射 / 清除 Rime 学习 / 清空用户词典 / 清空定型文 / 清除全部设置（各档独立确认）
 
 从桌面图标或**系统输入法设置的齿轮**都能进入。
-
-### 全屏输入模式（可选）
-设置 → 输入设定 → 全屏输入模式。开启后聚焦输入框时，输入法以全屏白底覆盖屏幕：顶部白色文本区镜像宿主编辑框内容（带 `│` 光标位置标记），底部是和平时完全一样的候选栏。文本仍增量上屏。
-- **如何关闭/发送**：因日系机 BACK 常作退格、OK 常作回车，可校准一颗**关闭输入法（DISMISS）**键来收起全屏/输入法（文本保留，回到宿主即可用其发送按钮）；也可校准**回车（ENTER）**键（如 `*`）用于格式换行。
-- 无 composing 时 ◀▶ 移动宿主光标；有 composing 时 ◀▶ 仍导航候选。
 
 ### 安全逃生（Safe Escape Hatch）
 **长按 退格 + `#` 5 秒** → 硬编码恢复出厂 keymap。也可 ADB：
@@ -151,6 +146,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - [rime / librime](https://github.com/rime/librime) — RIME 输入法核心
 - [osfans/Trime](https://github.com/osfans/trime) — 同文输入法（Android），提供 librime 的 Android 构建与 JNI 参考
 - [iDvel/rime-ice](https://github.com/iDvel/rime-ice) — 雾凇拼音词库
+- [Wafer233]https://github.com/wairudogisu - 帮忙测试以及修复了很多bug
 
 ---
 
