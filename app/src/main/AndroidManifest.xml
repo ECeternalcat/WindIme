@@ -89,6 +89,10 @@
             android:exported="false"
             android:label="@string/input_mode_loop" />
         <activity
+            android:name=".settings.CandidateSettingsActivity"
+            android:exported="false"
+            android:label="@string/candidate_settings_title" />
+        <activity
             android:name=".settings.KeymapSettingsActivity"
             android:exported="false"
             android:label="@string/settings_keymap" />

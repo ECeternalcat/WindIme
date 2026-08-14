@@ -243,6 +243,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 ViewGroup.LayoutParams.WRAP_CONTENT));
         candidateBar.setModeLabel(indicatorLabel());
         updateBackendStatus();
+        applyCandidatePrefs();
         enterModeBar();
     }
 
@@ -258,6 +259,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (keyFeedback != null && prefs != null) {
             keyFeedback.setMode(prefs.getFeedback());
         }
+        applyCandidatePrefs();
         inputSessionActive = true;
         inputViewActive = false;
         showModeBar = true;
@@ -629,6 +631,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         pinyinEngine = ready;
         setRimeStatus(RimeRuntimeStatus.State.READY, "标准词库已启用");
         Log.i(TAG, "Pinyin engine -> native rime-ice");
+        applyCandidatePrefs();
     }
 
     private void setRimeStatus(final RimeRuntimeStatus.State state, String detail) {
@@ -1448,6 +1451,15 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             if (index < 0 || index >= layered.getPinyinOptions().size()) {
                 return false;
             }
+            if (layered.isLoopMode()) {
+                // Loop sound-selection: confirm the reading at the current
+                // syllable position, advance to the next (wrapping after the
+                // last), and stay on the sound row. The candidate refresh and
+                // "n/total" indicator are driven by the onCandidatesChanged
+                // callback that the engine fires after recomputing.
+                layered.confirmAndAdvancePinyin(index);
+                return true;
+            }
             boolean confirmed = layered.confirmPinyinOption(index);
             if (confirmed) {
                 candidateBar.activateCandidateLayer();
@@ -1931,8 +1943,45 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             } else {
                 candidateBar.setCandidatesAndPinyinOptions(candidateArray, new String[0], -1);
             }
+            updateLoopPositionIndicator();
         }
         refreshSoftkeyGuide();
+    }
+
+    /**
+     * Push the candidate-bar prefs (default cursor row + loop sound-selection)
+     * onto the active engine and strip. Called at input-view creation, on each
+     * input start, and after the T9->Rime engine swap so the new engine honours
+     * the user's settings.
+     */
+    private void applyCandidatePrefs() {
+        if (prefs != null && candidateBar != null) {
+            candidateBar.setDefaultLayerPref(prefs.isDefaultLayerPinyin());
+        }
+        if (prefs != null && pinyinEngine instanceof LayeredPinyinEngine) {
+            LayeredPinyinEngine layered = (LayeredPinyinEngine) pinyinEngine;
+            boolean want = prefs.isLoopCandidateSound();
+            if (layered.isLoopMode() != want) {
+                layered.setLoopMode(want);
+            }
+        }
+        updateLoopPositionIndicator();
+    }
+
+    private void updateLoopPositionIndicator() {
+        if (candidateBar == null) {
+            return;
+        }
+        ImeEngine active = activeEngine();
+        if (active instanceof LayeredPinyinEngine) {
+            LayeredPinyinEngine layered = (LayeredPinyinEngine) active;
+            if (layered.isLoopMode() && layered.getLoopPositionCount() > 0) {
+                candidateBar.setLoopPosition(
+                        layered.getLoopEditPosition() + 1, layered.getLoopPositionCount());
+                return;
+            }
+        }
+        candidateBar.setLoopPosition(0, 0);
     }
 
     @Override

@@ -3,9 +3,11 @@ package com.garaho.ime.engine;
 import org.junit.Test;
 
 import java.util.Arrays;
+import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 public class PinyinSessionTest {
@@ -148,6 +150,78 @@ public class PinyinSessionTest {
         // The locked syllables should contain zhe and shi (not xie)
         assertTrue(session.getLockedSyllables().contains("zhe"));
         assertTrue(session.getLockedSyllables().contains("shi"));
+    }
+
+    // ----- Loop sound-selection mode -----
+
+    @Test
+    public void loopModeDefaultsOffAndNormalModelIntact() {
+        PinyinSession session = type("24");
+        assertFalse(session.isLoopMode());
+        // Normal model exposes the partial "keep typing" letters too.
+        assertTrue(session.getOptions().contains("a"));
+    }
+
+    @Test
+    public void loopModeExposesFixedPositionsAndWraps() {
+        // 943744 segments as two syllables (xie/zhe + shi).
+        PinyinSession session = type("943744");
+        session.setLoopMode(true);
+
+        assertEquals(2, session.getLoopPositionCount());
+        assertEquals(0, session.getLoopEditPosition());
+
+        // Every reading offered at the current position shares one digit code
+        // (the segmentation is fixed; only the reading varies).
+        String group0 = PinyinSyllables.t9Encode(session.getOptions().get(0));
+        for (String opt : session.getOptions()) {
+            assertEquals(group0, PinyinSyllables.t9Encode(opt));
+        }
+
+        assertTrue(session.confirmAndAdvance(0));
+        assertEquals(1, session.getLoopEditPosition());
+        assertEquals("744", PinyinSyllables.t9Encode(session.getOptions().get(0)));
+
+        // After the last position, confirm wraps back to the first.
+        assertTrue(session.confirmAndAdvance(0));
+        assertEquals(0, session.getLoopEditPosition());
+    }
+
+    @Test
+    public void loopModeOffersOnlyCompleteSyllables() {
+        PinyinSession session = type("24");
+        session.setLoopMode(true);
+        for (String opt : session.getOptions()) {
+            assertTrue("loop options must be complete syllables: " + opt,
+                    PinyinSyllables.isSyllable(opt));
+        }
+    }
+
+    @Test
+    public void loopPreviewSwapsReadingAtCurrentPosition() {
+        PinyinSession session = type("943744");
+        session.setLoopMode(true);
+
+        List<String> opts = session.getOptions();
+        int current = session.getSelectedIndex();
+        int other = (current == 0) ? 1 : 0;
+        String before = session.getPhraseKey();
+
+        assertTrue(session.preview(other));
+        assertNotEquals(before, session.getPhraseKey());
+        // Same digit group, so the digits buffer never changes.
+        assertEquals("943744", session.getDigits());
+    }
+
+    @Test
+    public void loopOffRestoresNormalModel() {
+        PinyinSession session = type("943744");
+        session.setLoopMode(true);
+        session.setLoopMode(false);
+
+        // Back to the legacy leading-prefix model: readings for the 943 prefix
+        // are exposed and the partial-letter behaviour is available again.
+        assertTrue(session.getOptions().indexOf("zhe") >= 0);
     }
 
     private static PinyinSession type(String digits) {

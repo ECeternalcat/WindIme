@@ -24,6 +24,8 @@ import java.util.List;
 public final class T9PinyinEngine implements ImeEngine, LayeredPinyinEngine {
 
     private static final int MAX_CANDIDATES = 12;
+    /** Slots always kept free for whole-phrase candidates (see buildCandidates). */
+    private static final int PHRASE_RESERVE = 3;
     private static final int MAX_BUFFER_DIGITS = 16;
 
     private final PinyinSession session = new PinyinSession();
@@ -165,6 +167,36 @@ public final class T9PinyinEngine implements ImeEngine, LayeredPinyinEngine {
         return true;
     }
 
+    @Override
+    public boolean confirmAndAdvancePinyin(int index) {
+        if (!session.confirmAndAdvance(index)) {
+            return false;
+        }
+        recompute();
+        return true;
+    }
+
+    @Override
+    public void setLoopMode(boolean loop) {
+        session.setLoopMode(loop);
+        recompute();
+    }
+
+    @Override
+    public boolean isLoopMode() {
+        return session.isLoopMode();
+    }
+
+    @Override
+    public int getLoopEditPosition() {
+        return session.getLoopEditPosition();
+    }
+
+    @Override
+    public int getLoopPositionCount() {
+        return session.getLoopPositionCount();
+    }
+
     private void fire(String committed) {
         if (listener == null) {
             return;
@@ -188,21 +220,24 @@ public final class T9PinyinEngine implements ImeEngine, LayeredPinyinEngine {
         int separator = phraseKey.indexOf('\'');
         if (separator > 0) {
             String firstSyllable = phraseKey.substring(0, separator);
-            // Keep the staged syllable flow as the default ordering.
+            // Keep the staged syllable flow as the default ordering, but cap
+            // the single-character stage so the whole-word candidates below
+            // always stay reachable: a popular single-syllable such as shi
+            // yields 12+ characters and would otherwise fill MAX_CANDIDATES
+            // on its own, hiding 世界 for 744543 entirely.
+            int syllableCap = Math.max(1, MAX_CANDIDATES - PHRASE_RESERVE);
             for (String word : PinyinDictionary.lookup(firstSyllable)) {
                 out.add(word);
-                if (out.size() >= MAX_CANDIDATES) {
+                if (out.size() >= syllableCap) {
                     break;
                 }
             }
             // Still expose a complete phrase such as 测试 after the current
             // syllable candidates, so the fast whole-word path is available.
-            if (out.size() < MAX_CANDIDATES) {
-                for (String word : PinyinDictionary.lookup(phraseKey)) {
-                    out.add(word);
-                    if (out.size() >= MAX_CANDIDATES) {
-                        break;
-                    }
+            for (String word : PinyinDictionary.lookup(phraseKey)) {
+                out.add(word);
+                if (out.size() >= MAX_CANDIDATES) {
+                    break;
                 }
             }
             return new ArrayList<>(out);

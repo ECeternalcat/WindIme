@@ -48,24 +48,31 @@ public class T9PinyinEngineTest {
     }
 
     @Test
-    public void nihao_yieldsPhraseCandidateFirst() {
+    public void nihao_stagesFirstSyllableThenPhrase() {
         CapturingListener l = new CapturingListener();
         T9PinyinEngine e = newEngine(l);
         type(e, "64426");
         assertEquals("ni'hao", e.getComposing());
         assertTrue("candidates must be non-empty", l.candidates.size() > 0);
-        assertEquals("你好", l.candidates.get(0));
+        // Staged syllable flow (candidate-bar PR): the first syllable's
+        // single characters lead, and the whole phrase stays reachable
+        // behind them thanks to the phrase reserve in buildCandidates.
+        assertEquals("你", l.candidates.get(0));
+        assertTrue("phrase 你好 must stay reachable", l.candidates.contains("你好"));
     }
 
     @Test
-    public void selectCandidate_commitsAndClearsBuffer() {
+    public void selectCandidate_commitsLeadingSyllableAndKeepsTail() {
         CapturingListener l = new CapturingListener();
         T9PinyinEngine e = newEngine(l);
         type(e, "64426");
         assertTrue(e.selectCandidate(0));
-        assertEquals("你好", l.lastCommitted);
-        assertEquals("", e.getComposing());
-        assertEquals(0, e.candidateCount());
+        // Committing the staged leading character (你 from ni) must not
+        // discard the uncommitted tail: the remaining digits survive so the
+        // user can keep selecting hao.
+        assertEquals("你", l.lastCommitted);
+        assertEquals("426", e.getBuffer());
+        assertTrue(e.candidateCount() > 0);
     }
 
     @Test
@@ -136,6 +143,8 @@ public class T9PinyinEngineTest {
         type(e, "426");
 
         assertEquals("ni'hao", e.getComposing());
-        assertEquals("你好", l.candidates.get(0));
+        // Staged ordering: 你 leads, 你好 stays reachable behind it.
+        assertEquals("你", l.candidates.get(0));
+        assertTrue(l.candidates.contains("你好"));
     }
 }

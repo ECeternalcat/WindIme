@@ -34,10 +34,18 @@ public final class GarahoPrefs {
     private static final String KEY_FULLSCREEN_COMPAT = "fullscreen_compat_packages";
     private static final String KEY_LAST_HOST_PACKAGE = "last_host_package";
     private static final String KEY_FIRSTRUN_COMPLETED = "firstrun_completed";
+    private static final String KEY_CANDIDATE_SOUND_MODE = "candidate_sound_mode";
+    private static final String KEY_DEFAULT_CANDIDATE_LAYER = "default_candidate_layer";
 
     public static final String FEEDBACK_VIBRATE = "vibrate";
     public static final String FEEDBACK_SOUND = "sound";
     public static final String FEEDBACK_NONE = "none";
+
+    public static final String SOUND_MODE_MODERN = "modern";
+    public static final String SOUND_MODE_LOOP = "loop";
+
+    public static final String DEFAULT_LAYER_CANDIDATE = "candidate";
+    public static final String DEFAULT_LAYER_PINYIN = "pinyin";
 
     private static final String MODE_LOOP_DEFAULT = "ZH,EN,NUM";
     private static final String FEEDBACK_DEFAULT = FEEDBACK_VIBRATE;
@@ -199,6 +207,42 @@ public final class GarahoPrefs {
 
     public void setFirstRunCompleted(boolean done) {
         sp.edit().putBoolean(KEY_FIRSTRUN_COMPLETED, done).apply();
+    }
+
+    /**
+     * How the candidate-sound row behaves in Chinese T9: {@link #SOUND_MODE_MODERN}
+     * (confirm a reading jumps to the word row) or {@link #SOUND_MODE_LOOP}
+     * (confirm a reading advances to the next syllable, wrapping at the end).
+     */
+    public String getCandidateSoundMode() {
+        String v = sp.getString(KEY_CANDIDATE_SOUND_MODE, SOUND_MODE_MODERN);
+        return SOUND_MODE_LOOP.equals(v) ? SOUND_MODE_LOOP : SOUND_MODE_MODERN;
+    }
+
+    public void setCandidateSoundMode(String mode) {
+        sp.edit().putString(KEY_CANDIDATE_SOUND_MODE, mode).apply();
+    }
+
+    public boolean isLoopCandidateSound() {
+        return SOUND_MODE_LOOP.equals(getCandidateSoundMode());
+    }
+
+    /**
+     * Which row the candidate cursor lands on after a digit is typed:
+     * {@link #DEFAULT_LAYER_CANDIDATE} (words) or {@link #DEFAULT_LAYER_PINYIN}
+     * (sound readings).
+     */
+    public String getDefaultCandidateLayer() {
+        String v = sp.getString(KEY_DEFAULT_CANDIDATE_LAYER, DEFAULT_LAYER_CANDIDATE);
+        return DEFAULT_LAYER_PINYIN.equals(v) ? DEFAULT_LAYER_PINYIN : DEFAULT_LAYER_CANDIDATE;
+    }
+
+    public void setDefaultCandidateLayer(String layer) {
+        sp.edit().putString(KEY_DEFAULT_CANDIDATE_LAYER, layer).apply();
+    }
+
+    public boolean isDefaultLayerPinyin() {
+        return DEFAULT_LAYER_PINYIN.equals(getDefaultCandidateLayer());
     }
 
     /** Wipe every persisted preference, returning to compiled defaults. */

@@ -1,7 +1,6 @@
 package com.garaho.ime.settings;
 
 import com.garaho.ime.R;
-import com.garaho.ime.engine.InputMode;
 
 import android.content.Intent;
 import android.view.View;
@@ -33,7 +32,6 @@ public class InputSettingsActivity extends BaseMenuActivity {
     }
 
     private void rebuild() {
-        final String modeSummary = summarizeModes(prefs.getModeLoop());
         final String feedbackSummary = feedbackLabel(prefs.getFeedback());
         final String capsSummary = prefs.getAutoCapitalize()
                 ? getString(R.string.value_on) : getString(R.string.value_off);
@@ -41,7 +39,7 @@ public class InputSettingsActivity extends BaseMenuActivity {
 
         java.util.List<String> items = new java.util.ArrayList<>();
         items.add(getString(R.string.input_default_ime));
-        items.add(getString(R.string.input_mode_loop) + ": " + modeSummary);
+        items.add(getString(R.string.candidate_settings_entry));
         items.add(getString(R.string.input_key_feedback) + ": " + feedbackSummary);
         items.add(getString(R.string.input_auto_caps) + ": " + capsSummary);
         items.add(getString(R.string.input_mtap_interval) + ": " + mtapSummary);
@@ -68,7 +66,7 @@ public class InputSettingsActivity extends BaseMenuActivity {
                         startActivity(new Intent(InputSettingsActivity.this, ImeSetupActivity.class));
                         break;
                     case 1:
-                        startActivity(new Intent(InputSettingsActivity.this, ModeLoopActivity.class));
+                        startActivity(new Intent(InputSettingsActivity.this, CandidateSettingsActivity.class));
                         break;
                     case 2:
                         cycleFeedback();
@@ -108,20 +106,6 @@ public class InputSettingsActivity extends BaseMenuActivity {
         }
         idx = (idx + 1) % opts.length;
         prefs.setMultiTapTimeout(opts[idx]);
-    }
-
-    private String summarizeModes(List<InputMode> modes) {
-        if (modes.isEmpty()) {
-            return "";
-        }
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < modes.size(); i++) {
-            if (i > 0) {
-                sb.append(' ');
-            }
-            sb.append(modes.get(i).label());
-        }
-        return sb.toString();
     }
 
     private String feedbackLabel(String value) {

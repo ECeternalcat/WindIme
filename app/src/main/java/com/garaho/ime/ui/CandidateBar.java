@@ -47,6 +47,8 @@ public class CandidateBar extends LinearLayout {
     private boolean gridExpanded;
     private String modeLabel = "中";
     private CharSequence composingText = "";
+    private boolean defaultLayerPinyin = false;
+    private String loopPositionLabel = "";
 
     public CandidateBar(Context context) {
         super(context);
@@ -117,6 +119,30 @@ public class CandidateBar extends LinearLayout {
         renderHeader();
     }
 
+    /**
+     * Choose which row the cursor lands on after a digit is typed and when the
+     * two-row layered state first appears. {@code pinyinFirst} puts the cursor
+     * on the sound-reading row; the default ({@code false}) keeps the legacy
+     * behaviour of landing on the word-candidate row.
+     */
+    public void setDefaultLayerPref(boolean pinyinFirst) {
+        this.defaultLayerPinyin = pinyinFirst;
+    }
+
+    /**
+     * Show a "n/total" label for loop sound-selection mode (which syllable
+     * position is being edited). Pass {@code 0}/{@code 0} (or count {@code 0})
+     * to clear it and restore the normal position indicator.
+     */
+    public void setLoopPosition(int oneBasedPosition, int count) {
+        if (count <= 0 || oneBasedPosition <= 0 || oneBasedPosition > count) {
+            this.loopPositionLabel = "";
+        } else {
+            this.loopPositionLabel = oneBasedPosition + "/" + count;
+        }
+        updatePositionIndicator();
+    }
+
     public void setBackendStatus(String status) {
         String next = status == null ? "" : status;
         if (next.contentEquals(backendStatus.getText())) {
@@ -176,9 +202,9 @@ public class CandidateBar extends LinearLayout {
                 // When the engine already has word candidates, focus those
                 // first. The pinyin row is the reading selector and should be
                 // reached with UP; this matches the syllable-by-syllable
-                // flip-phone flow (ce -> 测, then shi -> 试).
-                activeLayer = this.candidates.length > 0
-                        ? InputLayer.CANDIDATE : InputLayer.PINYIN;
+                // flip-phone flow (ce -> 测, then shi -> 试). The default-layer
+                // pref can flip this to the reading row.
+                activeLayer = pickDefaultLayer();
             }
         }
         pinyinRow.setVisibility(pinyinOptions.length > 0 ? View.VISIBLE : View.GONE);
@@ -211,8 +237,7 @@ public class CandidateBar extends LinearLayout {
                     ? selectedIndex
                     : Math.min(pinyinFocusIndex, nextPinyin.length - 1);
             if (firstLayeredState) {
-                activeLayer = this.candidates.length > 0
-                        ? InputLayer.CANDIDATE : InputLayer.PINYIN;
+                activeLayer = pickDefaultLayer();
             }
         }
         pinyinRow.setVisibility(nextPinyin.length > 0 ? View.VISIBLE : View.GONE);
@@ -294,14 +319,21 @@ public class CandidateBar extends LinearLayout {
 
     /** Select the useful default layer after a digit was typed. */
     public void activateDefaultLayer() {
-        if (candidates.length > 0) {
-            activeLayer = InputLayer.CANDIDATE;
-        } else if (pinyinOptions.length > 0) {
-            activeLayer = InputLayer.PINYIN;
-        } else {
-            activeLayer = InputLayer.CANDIDATE;
-        }
+        activeLayer = pickDefaultLayer();
         render();
+    }
+
+    private InputLayer pickDefaultLayer() {
+        if (defaultLayerPinyin && pinyinOptions.length > 0) {
+            return InputLayer.PINYIN;
+        }
+        if (candidates.length > 0) {
+            return InputLayer.CANDIDATE;
+        }
+        if (pinyinOptions.length > 0) {
+            return InputLayer.PINYIN;
+        }
+        return InputLayer.CANDIDATE;
     }
 
     public void resetCandidateFocus() {
@@ -409,17 +441,22 @@ public class CandidateBar extends LinearLayout {
         } else {
             pinyinLabel = "";
         }
+        final String loopLabel = this.loopPositionLabel;
         positionIndicator.post(new Runnable() {
             @Override
             public void run() {
-                String label = pinyinLabel;
-                if (label.isEmpty() && activeLayer == InputLayer.CANDIDATE
+                String label = loopLabel;
+                if (label == null || label.isEmpty()) {
+                    label = pinyinLabel;
+                }
+                if ((label == null || label.isEmpty())
+                        && activeLayer == InputLayer.CANDIDATE
                         && candidateScroll != null && candidates.length > 1
                         && (candidateScroll.canScrollHorizontally(-1)
                                 || candidateScroll.canScrollHorizontally(1))) {
                     label = (candidateFocusIndex + 1) + "/" + candidates.length;
                 }
-                if (label.isEmpty()) {
+                if (label == null || label.isEmpty()) {
                     positionIndicator.setText("");
                     positionIndicator.setVisibility(View.GONE);
                 } else {

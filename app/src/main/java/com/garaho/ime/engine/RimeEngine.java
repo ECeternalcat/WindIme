@@ -333,6 +333,36 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
         return true;
     }
 
+    @Override
+    public boolean confirmAndAdvancePinyin(int index) {
+        if (!session.confirmAndAdvance(index)) {
+            return false;
+        }
+        pushPhraseToRime();
+        return true;
+    }
+
+    @Override
+    public void setLoopMode(boolean loop) {
+        session.setLoopMode(loop);
+        pushPhraseToRime();
+    }
+
+    @Override
+    public boolean isLoopMode() {
+        return session.isLoopMode();
+    }
+
+    @Override
+    public int getLoopEditPosition() {
+        return session.getLoopEditPosition();
+    }
+
+    @Override
+    public int getLoopPositionCount() {
+        return session.getLoopPositionCount();
+    }
+
     /**
      * Re-segment the digit buffer and replay the resulting pinyin phrase into
      * rime as a fresh key sequence. Uses best-effort (greedy prefix)

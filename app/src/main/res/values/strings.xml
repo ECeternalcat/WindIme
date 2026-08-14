@@ -242,4 +242,14 @@
     <string name="firstrun_continue">继续</string>
     <string name="firstrun_done_title">设置完毕！</string>
     <string name="firstrun_done_body">开始体验全新的输入法吧！</string>
+
+    <!-- Candidate-bar settings -->
+    <string name="candidate_settings_title">候选栏设置</string>
+    <string name="candidate_settings_entry">候选栏设置</string>
+    <string name="candidate_sound_mode">候选音模式</string>
+    <string name="candidate_sound_mode_modern">现代（确认即选词）</string>
+    <string name="candidate_sound_mode_loop">循环选音（逐音确认）</string>
+    <string name="candidate_default_layer">默认候选光标</string>
+    <string name="candidate_default_layer_candidate">候选词栏</string>
+    <string name="candidate_default_layer_pinyin">候选音栏</string>
 </resources>
