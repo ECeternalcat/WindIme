@@ -270,10 +270,12 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             keyFeedback.setMode(prefs.getFeedback());
         }
         applyCandidatePrefs();
-        // No Caps key calibrated -> English Multi-tap falls back to the legacy
-        // abcABC mixed cycle (the # key always works as a trigger in private
-        // fields, so no fallback is needed there).
-        enMultiTapEngine.setCapsFallback(!keyMapper.isActionBound(InputAction.TOGGLE_CAPS));
+        // No Caps key calibrated -> letter multi-tap (English Multi-tap and
+        // the private/password path) falls back to the legacy abcABC mixed
+        // cycle; with a calibrated Caps key both use the isolated tables.
+        boolean capsBound = keyMapper.isActionBound(InputAction.TOGGLE_CAPS);
+        enMultiTapEngine.setCapsFallback(!capsBound);
+        privateMultiTapState.setMixedFallback(!capsBound);
         inputSessionActive = true;
         inputViewActive = false;
         showModeBar = true;
@@ -841,11 +843,10 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         } else if (action == InputAction.INPUT_KEY_POUND) {
             trackResetComboDown(action, event);
         }
-        // Caps trigger (calibrated key, or # inside private fields): resolve
-        // short-vs-long on key release; a repeat held past the threshold fires
-        // the long press immediately.
-        if (action == InputAction.TOGGLE_CAPS
-                || (privateInput && action == InputAction.INPUT_KEY_POUND)) {
+        // Caps trigger (calibrated TOGGLE_CAPS key): resolve short-vs-long on
+        // key release; a repeat held past the threshold fires the long press
+        // immediately.
+        if (action == InputAction.TOGGLE_CAPS) {
             return handleCapsKeyDown(action, event);
         }
         return handleAction(action) || super.onKeyDown(keyCode, event);
@@ -865,14 +866,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         InputAction action = keyMapper.resolve(keyCode, event.getScanCode());
         // Release of the Caps trigger: if no long press fired while it was
         // held, this is a short press (next-letter shift).
-        if (consumeCapsKeyUp
-                && (action == InputAction.TOGGLE_CAPS
-                        || (privateInput && action == InputAction.INPUT_KEY_POUND))) {
+        if (consumeCapsKeyUp && action == InputAction.TOGGLE_CAPS) {
             consumeCapsKeyUp = false;
             capsKeyTracked = false;
-            if (action == InputAction.INPUT_KEY_POUND) {
-                trackResetComboUp(action);
-            }
             if (!capsLongFired) {
                 applyCapsPress(false);
             }
@@ -923,10 +919,6 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     }
 
     private boolean handleCapsKeyDown(InputAction action, KeyEvent event) {
-        // Keep the 5s backspace+# factory-reset combo alive for the # key.
-        if (action == InputAction.INPUT_KEY_POUND) {
-            trackResetComboDown(action, event);
-        }
         consumeCapsKeyUp = true;
         if (event.getRepeatCount() == 0) {
             capsKeyTracked = true;
@@ -1098,9 +1090,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 // Symbols, phrases and their shortcuts are disabled in private fields.
                 return true;
             case INPUT_KEY_POUND:
-                // Handled by the Caps trigger interception in onKeyDown (short
-                // press = next-letter shift, long press = global toggle) via
-                // the shared CapsState. Unreachable in practice.
+                // Consumed without action (symbols are disabled in private
+                // fields). Case shift uses the calibrated Caps key, same as
+                // everywhere else.
                 return true;
             case BACKSPACE_DELETE:
                 return deleteFromEditor();

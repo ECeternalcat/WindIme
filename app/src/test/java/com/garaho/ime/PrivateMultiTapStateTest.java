@@ -100,4 +100,25 @@ public class PrivateMultiTapStateTest {
         // ...and the next new letter is upper again (shift was one-shot).
         assertEquals('M', state.press(6, 500, 600, caps).character);
     }
+
+    @Test
+    public void mixedFallbackCyclesLowercaseIntoUppercase() {
+        PrivateMultiTapState state = new PrivateMultiTapState();
+        state.setMixedFallback(true);
+
+        // No Caps key: same legacy abcABC cycle as English Multi-tap.
+        assertEquals('a', state.press(2, 100, 600).character);
+        assertEquals('b', state.press(2, 200, 600).character);
+        assertEquals('c', state.press(2, 300, 600).character);
+        assertEquals('A', state.press(2, 400, 600).character);
+        assertEquals('B', state.press(2, 500, 600).character);
+
+        // Global-upper via a CapsState still isolates the upper table.
+        com.garaho.ime.engine.CapsState caps = new com.garaho.ime.engine.CapsState();
+        caps.toggleGlobal();
+        PrivateMultiTapState fresh = new PrivateMultiTapState();
+        fresh.setMixedFallback(true);
+        assertEquals('P', fresh.press(7, 100, 600, caps).character);
+        assertEquals('Q', fresh.press(7, 200, 600, caps).character);
+    }
 }
