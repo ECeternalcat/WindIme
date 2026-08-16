@@ -48,7 +48,10 @@ public final class GarahoPrefs {
     public static final String DEFAULT_LAYER_CANDIDATE = "candidate";
     public static final String DEFAULT_LAYER_PINYIN = "pinyin";
 
-    private static final String MODE_LOOP_DEFAULT = "ZH,EN,NUM";
+    // English defaults to Multi-tap: the target audience is Chinese users,
+    // whose typical English input is passwords/abbreviations rather than
+    // vocabulary (prediction is therefore unwanted by default).
+    private static final String MODE_LOOP_DEFAULT = "ZH,EN_MTAP,NUM";
     private static final String FEEDBACK_DEFAULT = FEEDBACK_VIBRATE;
     private static final int MTAP_TIMEOUT_DEFAULT = 600;
 
@@ -76,7 +79,7 @@ public final class GarahoPrefs {
         }
         if (out.isEmpty()) {
             out.add(InputMode.ZH);
-            out.add(InputMode.EN);
+            out.add(InputMode.EN_MTAP);
             out.add(InputMode.NUM);
         }
         return out;

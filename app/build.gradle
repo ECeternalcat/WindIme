@@ -21,8 +21,8 @@ android {
         applicationId "com.garaho.ime"
         minSdk 19
         targetSdk 28
-        versionCode 23
-        versionName "0.5.6"
+        versionCode 24
+        versionName "0.5.7"
 
         // Prebuilt librime_jni.so ships only for armeabi-v7a (doc target
         // hardware: flip-phones). On other ABIs System.loadLibrary fails and
@@ -30,6 +30,7 @@ android {
         ndk {
             abiFilters 'armeabi-v7a'
         }
+        
     }
 
     buildTypes {
