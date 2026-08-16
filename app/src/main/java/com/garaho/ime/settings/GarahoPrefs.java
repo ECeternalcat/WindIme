@@ -36,6 +36,7 @@ public final class GarahoPrefs {
     private static final String KEY_FIRSTRUN_COMPLETED = "firstrun_completed";
     private static final String KEY_CANDIDATE_SOUND_MODE = "candidate_sound_mode";
     private static final String KEY_DEFAULT_CANDIDATE_LAYER = "default_candidate_layer";
+    private static final String KEY_LAST_UPDATE_CHECK = "last_update_check_epoch";
 
     public static final String FEEDBACK_VIBRATE = "vibrate";
     public static final String FEEDBACK_SOUND = "sound";
@@ -243,6 +244,15 @@ public final class GarahoPrefs {
 
     public boolean isDefaultLayerPinyin() {
         return DEFAULT_LAYER_PINYIN.equals(getDefaultCandidateLayer());
+    }
+
+    /** Epoch ms of the last completed update check (0 = never). */
+    public long getLastUpdateCheck() {
+        return sp.getLong(KEY_LAST_UPDATE_CHECK, 0);
+    }
+
+    public void setLastUpdateCheck(long epochMs) {
+        sp.edit().putLong(KEY_LAST_UPDATE_CHECK, epochMs).apply();
     }
 
     /** Wipe every persisted preference, returning to compiled defaults. */

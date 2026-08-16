@@ -58,7 +58,7 @@
     <string name="about_version_format">版本：%1$s（%2$d）</string>
     <string name="about_copyright">Copyright © 2026 Eternalcat</string>
     <string name="about_source_code">项目源代码</string>
-    <string name="about_source_url">https://github.com/ECeternalcat/Wind IME</string>
+    <string name="about_source_url">https://github.com/ECeternalcat/WindIme</string>
     <string name="about_open_source_licenses">开源许可证</string>
     <string name="license_windime">Wind IME - GNU GPL v3</string>
     <string name="license_rime">Rime / librime - BSD 3-Clause</string>
@@ -252,4 +252,13 @@
     <string name="candidate_default_layer">默认候选光标</string>
     <string name="candidate_default_layer_candidate">候选词栏</string>
     <string name="candidate_default_layer_pinyin">候选音栏</string>
+
+    <!-- Update check (GitHub releases) -->
+    <string name="about_check_update">检查更新</string>
+    <string name="update_checking">正在检查更新…</string>
+    <string name="update_already_latest">已是最新版本</string>
+    <string name="update_check_failed">检查更新失败，请稍后再试</string>
+    <string name="update_available_title">发现新版本</string>
+    <string name="update_download">去下载</string>
+    <string name="update_later">稍后再说</string>
 </resources>
