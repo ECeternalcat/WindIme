@@ -140,40 +140,50 @@ public class AboutActivity extends Activity {
     }
 
     private void showUpdateDialog(final UpdateInfo release) {
-        final AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle(getString(R.string.update_available_title)
-                        + " v" + release.versionName())
-                .setMessage(release.notes == null || release.notes.isEmpty()
-                        ? getString(R.string.update_download)
-                        : release.notes)
-                .setPositiveButton(R.string.update_download, null)
-                .setNegativeButton(R.string.update_later, null)
-                .create();
-        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-                .setOnClickListener(view -> {
-                    openUrl(release.downloadUrl());
-                }));
-        dialog.show();
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).requestFocus();
+        buildNotesDialog(release, false);
     }
 
     /** Read-only variant: same layout as the update dialog, download disabled. */
     private void showChangelogDialog(final UpdateInfo release) {
+        buildNotesDialog(release, true);
+    }
+
+    /**
+     * Japanese flip-phone dialog style: scrollable notes plus two stacked
+     * full-width bar buttons (list_selector focus look, black text). In
+     * read-only mode the download bar is greyed out and disabled, and focus
+     * starts on the close bar.
+     */
+    private void buildNotesDialog(final UpdateInfo release, final boolean readOnly) {
+        android.view.View body = android.view.LayoutInflater.from(this)
+                .inflate(R.layout.dialog_update, null);
+        TextView notes = body.findViewById(R.id.update_notes);
+        String formatted = com.garaho.ime.settings.update.ReleaseNotesFormatter
+                .format(release.notes);
+        notes.setText(formatted.isEmpty()
+                ? getString(R.string.update_changelog_empty) : formatted);
+
+        final TextView positive = body.findViewById(R.id.update_btn_positive);
+        final TextView negative = body.findViewById(R.id.update_btn_negative);
+        negative.setText(readOnly
+                ? R.string.update_changelog_close : R.string.update_later);
+
         final AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle(getString(R.string.update_changelog_title, release.versionName()))
-                .setMessage(release.notes == null || release.notes.isEmpty()
-                        ? getString(R.string.update_changelog_empty)
-                        : release.notes)
-                .setPositiveButton(R.string.update_download, null)
-                .setNegativeButton(R.string.update_changelog_close, null)
+                .setTitle(readOnly
+                        ? getString(R.string.update_changelog_title, release.versionName())
+                        : getString(R.string.update_available_title)
+                                + " v" + release.versionName())
+                .setView(body)
                 .create();
-        dialog.setOnShowListener(ignored -> {
-            // Current version on screen: nothing to update to, so the download
-            // action is visibly present but disabled; focus goes to Close so a
-            // D-pad OK dismisses the dialog.
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).requestFocus();
-        });
+        negative.setOnClickListener(view -> dialog.dismiss());
+        if (readOnly) {
+            positive.setEnabled(false);
+            positive.setTextColor(0xFF9E9E9E);
+        } else {
+            positive.setOnClickListener(view -> openUrl(release.downloadUrl()));
+        }
+        dialog.setOnShowListener(ignored ->
+                (readOnly ? negative : positive).requestFocus());
         dialog.show();
     }
 

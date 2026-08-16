@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="20dp"
+    android:paddingEnd="20dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="12dp">
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none">
+
+        <TextView
+            android:id="@+id/update_notes"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxHeight="320dp"
+            android:lineSpacingExtra="3dp"
+            android:textColor="@color/primary_text"
+            android:textSize="14sp" />
+    </ScrollView>
+
+    <!-- Japanese flip-phone dialog style: two full-width bar buttons stacked
+         vertically. Focus = list_focus_bg (light-blue fill + deep-blue border),
+         matching the rest of the 0-Touch UI. -->
+    <TextView
+        android:id="@+id/update_btn_positive"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/list_selector"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center"
+        android:minHeight="48dp"
+        android:padding="10dp"
+        android:text="@string/update_download"
+        android:textColor="@color/menu_item_text"
+        android:textSize="17sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/update_btn_negative"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/list_selector"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center"
+        android:minHeight="48dp"
+        android:padding="10dp"
+        android:text="@string/update_later"
+        android:textColor="@color/menu_item_text"
+        android:textSize="17sp" />
+
+</LinearLayout>
