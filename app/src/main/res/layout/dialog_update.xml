@@ -14,50 +14,56 @@
         android:layout_height="wrap_content"
         android:scrollbars="none">
 
-        <!-- Height cap is applied in code (40% of screen) so the dialog always
-             fits the small flip-phone screens; the bottom buttons must never
-             be pushed off-screen. -->
+        <!-- Height cap is applied to the ScrollView in code (40% of screen);
+             capping the TextView instead would clip text instead of letting
+             the ScrollView scroll it. -->
         <TextView
             android:id="@+id/update_notes"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:lineSpacingExtra="3dp"
             android:textColor="@color/primary_text"
-            android:textSize="14sp" />
+            android:textSize="13sp" />
     </ScrollView>
 
-    <!-- Japanese flip-phone dialog style: two full-width bar buttons stacked
-         vertically. Focus = list_focus_bg (light-blue fill + deep-blue border),
-         matching the rest of the 0-Touch UI. -->
+    <!-- Japanese flip-phone dialog style: two compact full-width bar buttons
+         stacked vertically, about half the height of the previous 48dp rows.
+         Focus = list_focus_bg (light-blue fill + deep-blue border). -->
     <TextView
         android:id="@+id/update_btn_positive"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="10dp"
         android:background="@drawable/list_selector"
         android:clickable="true"
         android:focusable="true"
         android:gravity="center"
-        android:minHeight="48dp"
-        android:padding="10dp"
+        android:minHeight="26dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp"
         android:text="@string/update_download"
         android:textColor="@color/menu_item_text"
-        android:textSize="17sp"
+        android:textSize="15sp"
         android:textStyle="bold" />
 
     <TextView
         android:id="@+id/update_btn_negative"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="6dp"
         android:background="@drawable/list_selector"
         android:clickable="true"
         android:focusable="true"
         android:gravity="center"
-        android:minHeight="48dp"
-        android:padding="10dp"
+        android:minHeight="26dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp"
         android:text="@string/update_later"
         android:textColor="@color/menu_item_text"
-        android:textSize="17sp" />
+        android:textSize="15sp" />
 
 </LinearLayout>

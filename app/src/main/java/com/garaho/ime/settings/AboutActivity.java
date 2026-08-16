@@ -164,14 +164,23 @@ public class AboutActivity extends Activity {
                 .inflate(R.layout.dialog_update, null);
         final TextView notes = body.findViewById(R.id.update_notes);
         final android.widget.ScrollView notesScroll = body.findViewById(R.id.update_notes_scroll);
-        // Keep the whole dialog (title + notes + two bar buttons) inside the
-        // small screens: a fixed dp cap here would still overflow short
-        // devices and clip the bottom button.
-        notes.setMaxHeight((int) (getResources().getDisplayMetrics().heightPixels * 0.40f));
         String formatted = com.garaho.ime.settings.update.ReleaseNotesFormatter
                 .format(release.notes);
         notes.setText(formatted.isEmpty()
                 ? getString(R.string.update_changelog_empty) : formatted);
+        // Cap the ScrollView (never the TextView: setMaxHeight on the text view
+        // clips the overflow instead of letting the ScrollView scroll it, which
+        // is why D-pad paging did nothing). Measure the text at roughly the
+        // dialog width, then clamp the scroll viewport so the two bar buttons
+        // always stay on-screen.
+        final int cap = (int) (getResources().getDisplayMetrics().heightPixels * 0.40f);
+        int widthSpec = android.view.View.MeasureSpec.makeMeasureSpec(
+                getResources().getDisplayMetrics().widthPixels,
+                android.view.View.MeasureSpec.AT_MOST);
+        notes.measure(widthSpec, android.view.View.MeasureSpec.makeMeasureSpec(
+                0, android.view.View.MeasureSpec.UNSPECIFIED));
+        notesScroll.getLayoutParams().height =
+                Math.min(notes.getMeasuredHeight(), cap);
 
         final TextView positive = body.findViewById(R.id.update_btn_positive);
         final TextView negative = body.findViewById(R.id.update_btn_negative);
