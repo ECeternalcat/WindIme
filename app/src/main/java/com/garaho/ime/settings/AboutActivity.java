@@ -8,9 +8,11 @@ import com.garaho.ime.settings.update.UpdateInfo;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.view.KeyEvent;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -152,12 +154,20 @@ public class AboutActivity extends Activity {
      * Japanese flip-phone dialog style: scrollable notes plus two stacked
      * full-width bar buttons (list_selector focus look, black text). In
      * read-only mode the download bar is greyed out and disabled, and focus
-     * starts on the close bar.
+     * starts on the close bar. UP/DOWN page through the notes (the dialog
+     * swallows the keys because ScrollView does not self-scroll on D-pad
+     * inside an AlertDialog); once fully scrolled the keys move focus between
+     * the two buttons.
      */
     private void buildNotesDialog(final UpdateInfo release, final boolean readOnly) {
         android.view.View body = android.view.LayoutInflater.from(this)
                 .inflate(R.layout.dialog_update, null);
-        TextView notes = body.findViewById(R.id.update_notes);
+        final TextView notes = body.findViewById(R.id.update_notes);
+        final android.widget.ScrollView notesScroll = body.findViewById(R.id.update_notes_scroll);
+        // Keep the whole dialog (title + notes + two bar buttons) inside the
+        // small screens: a fixed dp cap here would still overflow short
+        // devices and clip the bottom button.
+        notes.setMaxHeight((int) (getResources().getDisplayMetrics().heightPixels * 0.40f));
         String formatted = com.garaho.ime.settings.update.ReleaseNotesFormatter
                 .format(release.notes);
         notes.setText(formatted.isEmpty()
@@ -182,9 +192,43 @@ public class AboutActivity extends Activity {
         } else {
             positive.setOnClickListener(view -> openUrl(release.downloadUrl()));
         }
-        dialog.setOnShowListener(ignored ->
-                (readOnly ? negative : positive).requestFocus());
+        dialog.setOnKeyListener(new DialogInterface.OnKeyListener() {
+            @Override
+            public boolean onKey(DialogInterface d, int keyCode, KeyEvent event) {
+                if (event.getAction() != KeyEvent.ACTION_DOWN) {
+                    return false;
+                }
+                if (keyCode != KeyEvent.KEYCODE_DPAD_UP
+                        && keyCode != KeyEvent.KEYCODE_DPAD_DOWN) {
+                    return false;
+                }
+                int dir = keyCode == KeyEvent.KEYCODE_DPAD_UP
+                        ? android.view.View.FOCUS_UP : android.view.View.FOCUS_DOWN;
+                if (notesScroll.canScrollVertically(dir)) {
+                    notesScroll.pageScroll(dir);
+                    return true;
+                }
+                // Notes fully scrolled in that direction: shuttle focus
+                // between the two bar buttons instead.
+                if (!readOnly) {
+                    if (dir == android.view.View.FOCUS_DOWN && positive.hasFocus()) {
+                        negative.requestFocus();
+                    } else if (dir == android.view.View.FOCUS_UP && negative.hasFocus()) {
+                        positive.requestFocus();
+                    }
+                }
+                return true;
+            }
+        });
         dialog.show();
+        final TextView startFocus = readOnly ? negative : positive;
+        startFocus.requestFocus();
+        startFocus.post(new Runnable() {
+            @Override
+            public void run() {
+                startFocus.requestFocus();
+            }
+        });
     }
 
     private void openUrl(String url) {

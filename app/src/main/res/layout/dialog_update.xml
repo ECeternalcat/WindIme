@@ -9,15 +9,18 @@
     android:paddingBottom="12dp">
 
     <ScrollView
+        android:id="@+id/update_notes_scroll"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:scrollbars="none">
 
+        <!-- Height cap is applied in code (40% of screen) so the dialog always
+             fits the small flip-phone screens; the bottom buttons must never
+             be pushed off-screen. -->
         <TextView
             android:id="@+id/update_notes"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:maxHeight="320dp"
             android:lineSpacingExtra="3dp"
             android:textColor="@color/primary_text"
             android:textSize="14sp" />
