@@ -39,6 +39,13 @@ public enum InputAction {
     ENTER,
     /** Hide the IME / exit fullscreen, keeping committed text. */
     DISMISS_IME,
+    /**
+     * Caps toggle for English Multi-tap (and private fields). Short press:
+     * reverse the case of the next letter only. Long press: toggle global
+     * upper/lower case. Optional binding - when unbound, English Multi-tap
+     * falls back to the legacy abcABC mixed cycle.
+     */
+    TOGGLE_CAPS,
     /** Left soft key -> opens the quick menu. Kyocera Softkey Guide label "菜单". */
     SOFTKEY_LEFT,
     /** Right soft key -> opens the symbol/phrase panel. Softkey Guide label "符号". */

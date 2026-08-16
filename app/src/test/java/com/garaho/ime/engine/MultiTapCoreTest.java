@@ -3,47 +3,50 @@ package com.garaho.ime.engine;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 
 public class MultiTapCoreTest {
 
     @Test
-    public void groupLookup() {
-        assertEquals("abc", MultiTapCore.group(2));
-        assertEquals("pqrs", MultiTapCore.group(7));
-        assertEquals("wxyz", MultiTapCore.group(9));
-        assertEquals(null, MultiTapCore.group(1));
+    public void lowerTableCyclesTheBaseGroup() {
+        assertEquals('a', MultiTapCore.letter(2, 0, MultiTapCore.MtapTable.LOWER));
+        assertEquals('b', MultiTapCore.letter(2, 1, MultiTapCore.MtapTable.LOWER));
+        assertEquals('c', MultiTapCore.letter(2, 2, MultiTapCore.MtapTable.LOWER));
+        // wraps
+        assertEquals('a', MultiTapCore.letter(2, 3, MultiTapCore.MtapTable.LOWER));
     }
 
     @Test
-    public void groupSizes() {
-        assertEquals(3, MultiTapCore.groupSize(2));
-        assertEquals(4, MultiTapCore.groupSize(7));
-        assertEquals(0, MultiTapCore.groupSize(0));
+    public void upperTableIsIsolatedUppercase() {
+        assertEquals('A', MultiTapCore.letter(2, 0, MultiTapCore.MtapTable.UPPER));
+        assertEquals('B', MultiTapCore.letter(2, 1, MultiTapCore.MtapTable.UPPER));
+        assertEquals('C', MultiTapCore.letter(2, 2, MultiTapCore.MtapTable.UPPER));
+        // never falls back into lowercase
+        assertEquals('A', MultiTapCore.letter(2, 3, MultiTapCore.MtapTable.UPPER));
     }
 
     @Test
-    public void letterByIndex() {
-        assertEquals('a', MultiTapCore.letter(2, 0));
-        assertEquals('b', MultiTapCore.letter(2, 1));
-        assertEquals('c', MultiTapCore.letter(2, 2));
-        assertEquals('s', MultiTapCore.letter(7, 3));
-        assertEquals('z', MultiTapCore.letter(9, 3));
+    public void mixedTableContinuesLowercaseIntoUppercase() {
+        // Legacy abcABC fallback for digit 2.
+        assertEquals('a', MultiTapCore.letter(2, 0, MultiTapCore.MtapTable.MIXED));
+        assertEquals('b', MultiTapCore.letter(2, 1, MultiTapCore.MtapTable.MIXED));
+        assertEquals('c', MultiTapCore.letter(2, 2, MultiTapCore.MtapTable.MIXED));
+        assertEquals('A', MultiTapCore.letter(2, 3, MultiTapCore.MtapTable.MIXED));
+        assertEquals('B', MultiTapCore.letter(2, 4, MultiTapCore.MtapTable.MIXED));
+        assertEquals('C', MultiTapCore.letter(2, 5, MultiTapCore.MtapTable.MIXED));
+        assertEquals('a', MultiTapCore.letter(2, 6, MultiTapCore.MtapTable.MIXED));
     }
 
     @Test
-    public void letterWrapsAround() {
-        assertEquals('a', MultiTapCore.letter(2, 3));
-        assertEquals('a', MultiTapCore.letter(2, 6));
-        assertEquals('c', MultiTapCore.letter(2, -1));
+    public void mixedTableOnFourLetterGroups() {
+        // digit 7 = pqrs: p q r s P Q R S, then wraps.
+        assertEquals('s', MultiTapCore.letter(7, 3, MultiTapCore.MtapTable.MIXED));
+        assertEquals('P', MultiTapCore.letter(7, 4, MultiTapCore.MtapTable.MIXED));
+        assertEquals('S', MultiTapCore.letter(7, 7, MultiTapCore.MtapTable.MIXED));
+        assertEquals('p', MultiTapCore.letter(7, 8, MultiTapCore.MtapTable.MIXED));
     }
 
     @Test
-    public void isMultiTapDigitBoundary() {
-        assertTrue(MultiTapCore.isMultiTapDigit(2));
-        assertTrue(MultiTapCore.isMultiTapDigit(9));
-        assertFalse(MultiTapCore.isMultiTapDigit(1));
-        assertFalse(MultiTapCore.isMultiTapDigit(0));
+    public void negativeIndexWrapsForward() {
+        assertEquals('c', MultiTapCore.letter(2, -1, MultiTapCore.MtapTable.LOWER));
     }
 }

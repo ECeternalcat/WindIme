@@ -95,10 +95,19 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private boolean privateDirectDigits;
     /** Password-field mode: false = English multi-tap, true = direct digits. */
     private boolean privateNumericMode;
-    private boolean privateUppercase;
     private int expectedPrivateSelectionDelta = -1;
     private boolean suppressEngineCallbacks;
     private final PrivateMultiTapState privateMultiTapState = new PrivateMultiTapState();
+    /**
+     * The single app-wide case-shift state, shared by English Multi-tap and
+     * the private/password input path (one case mechanism, never two).
+     */
+    private final com.garaho.ime.engine.CapsState capsState =
+            new com.garaho.ime.engine.CapsState();
+    /** Caps trigger held: short-vs-long press resolution in progress. */
+    private boolean capsKeyTracked;
+    private boolean capsLongFired;
+    private boolean consumeCapsKeyUp;
     private boolean keymapPromptShown;
     private String[] barLabels = null;
     private InputMode[] barModes = null;
@@ -170,6 +179,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         zhMultiTapEngine.setListener(this);
         enMultiTapEngine = new EnglishMultiTapEngine(prefs);
         enMultiTapEngine.setListener(this);
+        enMultiTapEngine.setCapsState(capsState);
 
         com.garaho.ime.user.UserDictionary userDict = com.garaho.ime.user.UserDictionary.get(this);
         ((T9PinyinEngine) pinyinEngine).setUserWordSource(userDict);
@@ -260,6 +270,10 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             keyFeedback.setMode(prefs.getFeedback());
         }
         applyCandidatePrefs();
+        // No Caps key calibrated -> English Multi-tap falls back to the legacy
+        // abcABC mixed cycle (the # key always works as a trigger in private
+        // fields, so no fallback is needed there).
+        enMultiTapEngine.setCapsFallback(!keyMapper.isActionBound(InputAction.TOGGLE_CAPS));
         inputSessionActive = true;
         inputViewActive = false;
         showModeBar = true;
@@ -269,7 +283,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 && PrivateInputPolicy.isPrivateField(attribute.inputType, attribute.imeOptions);
         privateDirectDigits = privateInput && PrivateInputPolicy.usesDirectDigits(attribute.inputType);
         privateNumericMode = privateDirectDigits;
-        privateUppercase = false;
+        capsState.reset();
         if (privateInput || wasPrivateInput) {
             clearAllEngineState();
         }
@@ -700,7 +714,15 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             return "";
         }
         boolean show = new GarahoPrefs(this).getShowIndicator();
-        return show ? mode.label() : "";
+        if (!show) {
+            return "";
+        }
+        // English Multi-tap shows the live case state (Abc / aBc / ABC / AbC)
+        // instead of the static mode label.
+        if (mode == InputMode.EN_MTAP) {
+            return capsState.label();
+        }
+        return mode.label();
     }
 
     /**
@@ -819,6 +841,13 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         } else if (action == InputAction.INPUT_KEY_POUND) {
             trackResetComboDown(action, event);
         }
+        // Caps trigger (calibrated key, or # inside private fields): resolve
+        // short-vs-long on key release; a repeat held past the threshold fires
+        // the long press immediately.
+        if (action == InputAction.TOGGLE_CAPS
+                || (privateInput && action == InputAction.INPUT_KEY_POUND)) {
+            return handleCapsKeyDown(action, event);
+        }
         return handleAction(action) || super.onKeyDown(keyCode, event);
     }
 
@@ -834,6 +863,21 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             return true;
         }
         InputAction action = keyMapper.resolve(keyCode, event.getScanCode());
+        // Release of the Caps trigger: if no long press fired while it was
+        // held, this is a short press (next-letter shift).
+        if (consumeCapsKeyUp
+                && (action == InputAction.TOGGLE_CAPS
+                        || (privateInput && action == InputAction.INPUT_KEY_POUND))) {
+            consumeCapsKeyUp = false;
+            capsKeyTracked = false;
+            if (action == InputAction.INPUT_KEY_POUND) {
+                trackResetComboUp(action);
+            }
+            if (!capsLongFired) {
+                applyCapsPress(false);
+            }
+            return true;
+        }
         trackResetComboUp(action);
         return super.onKeyUp(keyCode, event);
     }
@@ -866,6 +910,55 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         }
         if (!backspaceHeld || !poundHeld) {
             resetComboHandler.removeCallbacks(resetComboRunnable);
+        }
+    }
+
+    /**
+     * Long-press threshold for the Caps trigger. Deliberately reuses the
+     * user's Multi-tap interval setting: it is the reaction window the user
+     * has already confirmed comfortable (settings - input - Multi-tap interval).
+     */
+    private int capsLongPressThresholdMs() {
+        return prefs == null ? 600 : Math.max(100, prefs.getMultiTapTimeout());
+    }
+
+    private boolean handleCapsKeyDown(InputAction action, KeyEvent event) {
+        // Keep the 5s backspace+# factory-reset combo alive for the # key.
+        if (action == InputAction.INPUT_KEY_POUND) {
+            trackResetComboDown(action, event);
+        }
+        consumeCapsKeyUp = true;
+        if (event.getRepeatCount() == 0) {
+            capsKeyTracked = true;
+            capsLongFired = false;
+        } else if (capsKeyTracked && !capsLongFired
+                && event.getEventTime() - event.getDownTime() >= capsLongPressThresholdMs()) {
+            capsLongFired = true;
+            applyCapsPress(true);
+        }
+        return true;
+    }
+
+    /**
+     * Apply a Caps short/long press. Active only where the unified case
+     * mechanism lives: English Multi-tap and private fields. Consumed without
+     * effect in every other mode so a calibrated Caps key never leaks to the
+     * host.
+     */
+    private void applyCapsPress(boolean longPress) {
+        boolean applicable = privateInput || mode == InputMode.EN_MTAP;
+        if (!applicable) {
+            return;
+        }
+        if (longPress) {
+            capsState.toggleGlobal();
+        } else {
+            capsState.shortPress();
+        }
+        if (privateInput) {
+            updatePrivateModeBar();
+        } else if (candidateBar != null) {
+            candidateBar.setModeLabel(indicatorLabel());
         }
     }
 
@@ -989,7 +1082,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             }
             PrivateMultiTapState.Edit edit = privateMultiTapState.press(
                     digit, android.os.SystemClock.uptimeMillis(), privateMultiTapTimeoutMs(),
-                    privateUppercase);
+                    capsState);
             applyPrivateEdit(edit);
             return true;
         }
@@ -1005,9 +1098,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 // Symbols, phrases and their shortcuts are disabled in private fields.
                 return true;
             case INPUT_KEY_POUND:
-                // Symbols, phrases and their shortcuts are disabled in private fields.
-                privateUppercase = !privateUppercase;
-                updatePrivateModeBar();
+                // Handled by the Caps trigger interception in onKeyDown (short
+                // press = next-letter shift, long press = global toggle) via
+                // the shared CapsState. Unreachable in practice.
                 return true;
             case BACKSPACE_DELETE:
                 return deleteFromEditor();
@@ -1032,12 +1125,12 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         }
     }
 
-    /** Render the small En/123 selector used while editing password fields. */
+    /** Render the small Abc/123 selector used while editing password fields. */
     private void updatePrivateModeBar() {
         if (candidateBar == null || !privateInput) {
             return;
         }
-        String enLabel = privateUppercase ? "EN" : "en";
+        String enLabel = capsState.label();
         String[] labels = new String[] {enLabel, "123"};
         candidateBar.setModeBar(labels, privateNumericMode ? 1 : 0);
         candidateBar.showModeBar(true);
@@ -1888,6 +1981,12 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         currentComposing = composing;
         if (candidateBar != null) {
             candidateBar.setComposingText(composing);
+            // English Multi-tap: a consumed one-shot shift changes the case
+            // indicator (aBc -> Abc), so refresh the label with every
+            // composing update.
+            if (mode == InputMode.EN_MTAP && !showModeBar) {
+                candidateBar.setModeLabel(indicatorLabel());
+            }
         }
         refreshSoftkeyGuide();
     }

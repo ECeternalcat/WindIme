@@ -43,6 +43,7 @@ public class SetupWizardActivity extends Activity {
             InputAction.SHOW_QUICK_MENU,
             InputAction.BACKSPACE_DELETE,
             InputAction.ENTER,
+            InputAction.TOGGLE_CAPS,
             InputAction.DISMISS_IME,
     };
 
@@ -304,6 +305,7 @@ public class SetupWizardActivity extends Activity {
             case SHOW_QUICK_MENU: return getString(R.string.action_quick_menu);
             case BACKSPACE_DELETE: return getString(R.string.action_backspace);
             case ENTER: return getString(R.string.action_enter);
+            case TOGGLE_CAPS: return getString(R.string.action_caps);
             case DISMISS_IME: return getString(R.string.action_dismiss);
             case CONFIRM_SELECTION: return getString(R.string.action_confirm);
             case NAV_UP: return getString(R.string.action_nav_up);

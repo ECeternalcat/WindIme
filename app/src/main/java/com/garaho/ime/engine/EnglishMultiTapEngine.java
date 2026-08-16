@@ -4,6 +4,7 @@ import android.os.Handler;
 import android.os.Looper;
 
 import com.garaho.ime.settings.GarahoPrefs;
+import com.garaho.ime.engine.MultiTapCore.MtapTable;
 
 import java.util.Collections;
 import java.util.List;
@@ -27,6 +28,17 @@ public final class EnglishMultiTapEngine implements ImeEngine, MultiTapSupport {
     private int pendingIndex = 0;
     private CharSequence composing = "";
 
+    /** Shared case-shift state; the service owns the single instance. */
+    private CapsState caps;
+    /**
+     * Legacy fallback when no Caps key is calibrated: the lowercase cycle
+     * continues into uppercase (a b c A B C). Only affects the lower-case
+     * global state; upper case is always the isolated ABC table.
+     */
+    private boolean capsFallback;
+    /** Table locked for the letter currently being cycled (CapsState §consume). */
+    private boolean letterUppercase;
+
     private final Runnable timeoutRunnable = new Runnable() {
         @Override
         public void run() {
@@ -38,9 +50,37 @@ public final class EnglishMultiTapEngine implements ImeEngine, MultiTapSupport {
         this.prefs = prefs;
     }
 
+    /** Inject the shared {@link CapsState} (one case mechanism app-wide). */
+    public void setCapsState(CapsState caps) {
+        this.caps = caps;
+    }
+
+    /** No Caps key calibrated -> enable the abcABC mixed-cycle fallback. */
+    public void setCapsFallback(boolean fallback) {
+        this.capsFallback = fallback;
+    }
+
     @Override
     public void setListener(EngineListener listener) {
         this.listener = listener;
+    }
+
+    private MtapTable tableForNewLetter() {
+        if (caps == null) {
+            return capsFallback ? MtapTable.MIXED : MtapTable.LOWER;
+        }
+        boolean upper = caps.nextLetterUppercase();
+        caps.consumePendingShift();
+        letterUppercase = upper;
+        if (upper) {
+            return MtapTable.UPPER;
+        }
+        return capsFallback ? MtapTable.MIXED : MtapTable.LOWER;
+    }
+
+    private MtapTable tableForCurrentLetter() {
+        return letterUppercase ? MtapTable.UPPER
+                : (capsFallback ? MtapTable.MIXED : MtapTable.LOWER);
     }
 
     @Override
@@ -49,15 +89,18 @@ public final class EnglishMultiTapEngine implements ImeEngine, MultiTapSupport {
             return false;
         }
         handler.removeCallbacks(timeoutRunnable);
+        MtapTable table;
         if (digit == pendingDigit) {
             pendingIndex++;
+            table = tableForCurrentLetter();
         } else {
             finalizePending();
             pendingDigit = digit;
             pendingIndex = 0;
+            table = tableForNewLetter();
         }
         composing = MultiTapHighlight.apply(
-                String.valueOf(MultiTapCore.letter(digit, pendingIndex)), 0, 1);
+                String.valueOf(MultiTapCore.letter(digit, pendingIndex, table)), 0, 1);
         fireComposing();
         handler.postDelayed(timeoutRunnable, timeoutMs());
         return true;
@@ -71,7 +114,7 @@ public final class EnglishMultiTapEngine implements ImeEngine, MultiTapSupport {
 
     private void finalizePending() {
         if (pendingDigit >= 0) {
-            char c = MultiTapCore.letter(pendingDigit, pendingIndex);
+            char c = MultiTapCore.letter(pendingDigit, pendingIndex, tableForCurrentLetter());
             if (listener != null && c != 0) {
                 listener.onCommit(String.valueOf(c));
             }

@@ -110,6 +110,13 @@ public final class KeyMapper {
         return prefs.getActiveKeymapSlot();
     }
 
+    /** @return true when some physical key is mapped (user or factory) to {@code action}. */
+    public boolean isActionBound(InputAction action) {
+        synchronized (this) {
+            return keyCodeMap.containsValue(action) || scanCodeMap.containsValue(action);
+        }
+    }
+
     public KeyMapConfig getConfig() {
         synchronized (this) {
             return config == null ? null : config.copy();

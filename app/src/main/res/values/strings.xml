@@ -27,6 +27,7 @@
     <string name="action_confirm">确认 / 换行</string>
     <string name="action_enter">回车 / 换行</string>
     <string name="action_dismiss">关闭输入法</string>
+    <string name="action_caps">大写切换（Caps）</string>
     <string name="action_softkey_left">左软键（菜单）</string>
     <string name="action_softkey_right">右软键（符号）</string>
     <string name="softkey_complete">完成</string>

@@ -49,6 +49,46 @@ public final class MultiTapCore {
         return g.charAt(((index % len) + len) % len);
     }
 
+    /**
+     * Cycling table for letter Multi-tap. {@link #MIXED} is the legacy
+     * no-Caps-key fallback: lowercase first, then continuing into uppercase
+     * within one cycle (a b c A B C a), so the case of the selected letter is
+     * carried by the selection itself and no case state is needed. UPPER and
+     * LOWER are isolated single-case tables driven by {@link CapsState}.
+     */
+    public enum MtapTable {
+        LOWER,
+        UPPER,
+        MIXED
+    }
+
+    /** Group letters for {@code digit} arranged per {@code table}. */
+    public static String groupFor(int digit, MtapTable table) {
+        String g = group(digit);
+        if (g == null) {
+            return "";
+        }
+        switch (table) {
+            case UPPER:
+                return g.toUpperCase(java.util.Locale.ROOT);
+            case MIXED:
+                return g + g.toUpperCase(java.util.Locale.ROOT);
+            case LOWER:
+            default:
+                return g;
+        }
+    }
+
+    /** @return the letter at {@code index} (mod table size), or {@code '\0'}. */
+    public static char letter(int digit, int index, MtapTable table) {
+        String g = groupFor(digit, table);
+        if (g.isEmpty()) {
+            return '\0';
+        }
+        int len = g.length();
+        return g.charAt(((index % len) + len) % len);
+    }
+
     public static boolean isMultiTapDigit(int d) {
         return d >= 2 && d <= 9;
     }

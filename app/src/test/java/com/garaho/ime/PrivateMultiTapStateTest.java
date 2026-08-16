@@ -57,4 +57,47 @@ public class PrivateMultiTapStateTest {
         assertNull(state.press(0, 100, 600));
         assertNull(state.press(1, 100, 600));
     }
+
+    @Test
+    public void tableLockedPerLetterFromCapsState() {
+        PrivateMultiTapState state = new PrivateMultiTapState();
+        com.garaho.ime.engine.CapsState caps = new com.garaho.ime.engine.CapsState();
+
+        // Pending shift: the new letter starts on the upper table and the
+        // shift is consumed immediately (one-shot semantics).
+        caps.shortPress();
+        PrivateMultiTapState.Edit first = state.press(2, 100, 600, caps);
+        assertEquals('A', first.character);
+        assertFalse(caps.isPendingShift());
+
+        // Cycling the same letter keeps the locked upper table even though the
+        // global state is still lowercase.
+        PrivateMultiTapState.Edit second = state.press(2, 200, 600, caps);
+        PrivateMultiTapState.Edit third = state.press(2, 300, 600, caps);
+        assertEquals('B', second.character);
+        assertEquals('C', third.character);
+
+        // A new letter (different digit) uses the global lowercase table.
+        PrivateMultiTapState.Edit next = state.press(3, 400, 600, caps);
+        assertEquals('d', next.character);
+        assertFalse(next.replacePrevious);
+    }
+
+    @Test
+    public void globalUpperUsesUpperTable() {
+        PrivateMultiTapState state = new PrivateMultiTapState();
+        com.garaho.ime.engine.CapsState caps = new com.garaho.ime.engine.CapsState();
+        caps.toggleGlobal();
+
+        assertEquals('A', state.press(2, 100, 600, caps).character);
+        assertEquals('B', state.press(2, 200, 600, caps).character);
+
+        // Reverse shift inside global-upper: exactly the next letter lower.
+        caps.shortPress();
+        assertEquals('d', state.press(3, 300, 600, caps).character);
+        // Cycling the same letter keeps the locked lower table...
+        assertEquals('e', state.press(3, 400, 600, caps).character);
+        // ...and the next new letter is upper again (shift was one-shot).
+        assertEquals('M', state.press(6, 500, 600, caps).character);
+    }
 }
