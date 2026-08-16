@@ -84,6 +84,25 @@
                 android:textSize="17sp" />
 
             <TextView
+                android:id="@+id/about_changelog"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/list_selector"
+                android:clickable="true"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
+                android:gravity="center_vertical"
+                android:minHeight="48dp"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp"
+                android:text="@string/about_view_changelog"
+                android:textColor="@color/menu_item_text"
+                android:textSize="17sp" />
+
+            <TextView
                 android:id="@+id/about_source"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

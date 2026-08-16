@@ -255,10 +255,16 @@
 
     <!-- Update check (GitHub releases) -->
     <string name="about_check_update">检查更新</string>
+    <string name="about_view_changelog">查看更新日志</string>
     <string name="update_checking">正在检查更新…</string>
     <string name="update_already_latest">已是最新版本</string>
     <string name="update_check_failed">检查更新失败，请稍后再试</string>
     <string name="update_available_title">发现新版本</string>
     <string name="update_download">去下载</string>
     <string name="update_later">稍后再说</string>
+    <string name="update_changelog_title">更新日志 v%1$s</string>
+    <string name="update_changelog_empty">（该版本没有更新日志）</string>
+    <string name="update_changelog_close">关闭</string>
+    <string name="update_fetching">正在获取更新日志…</string>
+    <string name="update_fetch_failed">获取更新日志失败，请稍后再试</string>
 </resources>

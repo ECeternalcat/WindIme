@@ -43,6 +43,9 @@ public class AboutActivity extends Activity {
         TextView update = findViewById(R.id.about_update);
         update.setOnClickListener(view -> checkForUpdate(true));
 
+        TextView changelog = findViewById(R.id.about_changelog);
+        changelog.setOnClickListener(view -> viewChangelog());
+
         TextView source = findViewById(R.id.about_source);
         source.setOnClickListener(view -> openSourceCode());
 
@@ -98,6 +101,44 @@ public class AboutActivity extends Activity {
         });
     }
 
+    /**
+     * Fetch the latest release and show its notes. When the release is newer
+     * than the running build this is the normal update dialog (working
+     * download button); when it is the current (or an older) version it is a
+     * read-only changelog viewer with the download button disabled.
+     */
+    private void viewChangelog() {
+        if (updateCheckRunning) {
+            return;
+        }
+        updateCheckRunning = true;
+        Toast.makeText(this, R.string.update_fetching, Toast.LENGTH_SHORT).show();
+        UpdateChecker.checkAsync(this, new UpdateChecker.Callback() {
+            @Override
+            public void onResult(UpdateInfo release, boolean isNewer) {
+                updateCheckRunning = false;
+                if (isFinishing()) {
+                    return;
+                }
+                if (isNewer) {
+                    showUpdateDialog(release);
+                } else {
+                    showChangelogDialog(release);
+                }
+            }
+
+            @Override
+            public void onError() {
+                updateCheckRunning = false;
+                if (isFinishing()) {
+                    return;
+                }
+                Toast.makeText(AboutActivity.this,
+                        R.string.update_fetch_failed, Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
     private void showUpdateDialog(final UpdateInfo release) {
         final AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle(getString(R.string.update_available_title)
@@ -114,6 +155,26 @@ public class AboutActivity extends Activity {
                 }));
         dialog.show();
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).requestFocus();
+    }
+
+    /** Read-only variant: same layout as the update dialog, download disabled. */
+    private void showChangelogDialog(final UpdateInfo release) {
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(getString(R.string.update_changelog_title, release.versionName()))
+                .setMessage(release.notes == null || release.notes.isEmpty()
+                        ? getString(R.string.update_changelog_empty)
+                        : release.notes)
+                .setPositiveButton(R.string.update_download, null)
+                .setNegativeButton(R.string.update_changelog_close, null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            // Current version on screen: nothing to update to, so the download
+            // action is visibly present but disabled; focus goes to Close so a
+            // D-pad OK dismisses the dialog.
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).requestFocus();
+        });
+        dialog.show();
     }
 
     private void openUrl(String url) {
