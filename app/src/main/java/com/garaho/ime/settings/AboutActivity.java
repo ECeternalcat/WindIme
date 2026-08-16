@@ -152,12 +152,13 @@ public class AboutActivity extends Activity {
 
     /**
      * Japanese flip-phone dialog style: scrollable notes plus two stacked
-     * full-width bar buttons (list_selector focus look, black text). In
-     * read-only mode the download bar is greyed out and disabled, and focus
-     * starts on the close bar. UP/DOWN page through the notes (the dialog
-     * swallows the keys because ScrollView does not self-scroll on D-pad
-     * inside an AlertDialog); once fully scrolled the keys move focus between
-     * the two buttons.
+     * full-width bar buttons. D-pad selection is managed manually (Android
+     * view focus proved unreliable inside an AlertDialog on these devices):
+     * UP/DOWN page through the notes and, once pageScroll reports the end,
+     * move the selection; LEFT/RIGHT always move the selection; OK activates
+     * the selected bar. The selected bar is painted with the standard
+     * list_focus_bg focus look. In read-only mode the download bar is greyed
+     * out and the selection stays on Close.
      */
     private void buildNotesDialog(final UpdateInfo release, final boolean readOnly) {
         android.view.View body = android.view.LayoutInflater.from(this)
@@ -168,11 +169,8 @@ public class AboutActivity extends Activity {
                 .format(release.notes);
         notes.setText(formatted.isEmpty()
                 ? getString(R.string.update_changelog_empty) : formatted);
-        // Cap the ScrollView (never the TextView: setMaxHeight on the text view
-        // clips the overflow instead of letting the ScrollView scroll it, which
-        // is why D-pad paging did nothing). Measure the text at roughly the
-        // dialog width, then clamp the scroll viewport so the two bar buttons
-        // always stay on-screen.
+        // Cap the ScrollView viewport (never the TextView: setMaxHeight on the
+        // text view clips overflow instead of letting the ScrollView scroll).
         final int cap = (int) (getResources().getDisplayMetrics().heightPixels * 0.40f);
         int widthSpec = android.view.View.MeasureSpec.makeMeasureSpec(
                 getResources().getDisplayMetrics().widthPixels,
@@ -201,43 +199,74 @@ public class AboutActivity extends Activity {
         } else {
             positive.setOnClickListener(view -> openUrl(release.downloadUrl()));
         }
+
+        // Manually selected bar: [0]=download, [1]=close. Read-only keeps 0.
+        final TextView[] bars = readOnly
+                ? new TextView[] { negative }
+                : new TextView[] { positive, negative };
+        final int[] selected = { 0 };
+
         dialog.setOnKeyListener(new DialogInterface.OnKeyListener() {
             @Override
             public boolean onKey(DialogInterface d, int keyCode, KeyEvent event) {
                 if (event.getAction() != KeyEvent.ACTION_DOWN) {
                     return false;
                 }
-                if (keyCode != KeyEvent.KEYCODE_DPAD_UP
-                        && keyCode != KeyEvent.KEYCODE_DPAD_DOWN) {
-                    return false;
+                switch (keyCode) {
+                    case KeyEvent.KEYCODE_DPAD_UP:
+                        // pageScroll returns false once the top is reached,
+                        // then the key moves the selection instead.
+                        if (notesScroll.pageScroll(android.view.View.FOCUS_UP)) {
+                            return true;
+                        }
+                        moveSelection(bars, selected, -1);
+                        return true;
+                    case KeyEvent.KEYCODE_DPAD_DOWN:
+                        if (notesScroll.pageScroll(android.view.View.FOCUS_DOWN)) {
+                            return true;
+                        }
+                        moveSelection(bars, selected, 1);
+                        return true;
+                    case KeyEvent.KEYCODE_DPAD_LEFT:
+                        moveSelection(bars, selected, -1);
+                        return true;
+                    case KeyEvent.KEYCODE_DPAD_RIGHT:
+                        moveSelection(bars, selected, 1);
+                        return true;
+                    case KeyEvent.KEYCODE_DPAD_CENTER:
+                    case KeyEvent.KEYCODE_ENTER:
+                        bars[selected[0]].performClick();
+                        return true;
+                    default:
+                        return false;
                 }
-                int dir = keyCode == KeyEvent.KEYCODE_DPAD_UP
-                        ? android.view.View.FOCUS_UP : android.view.View.FOCUS_DOWN;
-                if (notesScroll.canScrollVertically(dir)) {
-                    notesScroll.pageScroll(dir);
-                    return true;
-                }
-                // Notes fully scrolled in that direction: shuttle focus
-                // between the two bar buttons instead.
-                if (!readOnly) {
-                    if (dir == android.view.View.FOCUS_DOWN && positive.hasFocus()) {
-                        negative.requestFocus();
-                    } else if (dir == android.view.View.FOCUS_UP && negative.hasFocus()) {
-                        positive.requestFocus();
-                    }
-                }
-                return true;
             }
         });
         dialog.show();
-        final TextView startFocus = readOnly ? negative : positive;
-        startFocus.requestFocus();
-        startFocus.post(new Runnable() {
-            @Override
-            public void run() {
-                startFocus.requestFocus();
+        paintSelection(bars, selected[0]);
+    }
+
+    private static boolean moveSelection(TextView[] bars, int[] selected, int delta) {
+        int next = Math.max(0, Math.min(bars.length - 1, selected[0] + delta));
+        if (next == selected[0]) {
+            return false;
+        }
+        selected[0] = next;
+        paintSelection(bars, next);
+        return true;
+    }
+
+    private static void paintSelection(TextView[] bars, int index) {
+        for (int i = 0; i < bars.length; i++) {
+            TextView bar = bars[i];
+            if (i == index) {
+                bar.setBackgroundResource(R.drawable.list_focus_bg);
+                bar.setTypeface(bar.getTypeface(), android.graphics.Typeface.BOLD);
+            } else {
+                bar.setBackgroundResource(0);
+                bar.setTypeface(bar.getTypeface(), android.graphics.Typeface.NORMAL);
             }
-        });
+        }
     }
 
     private void openUrl(String url) {

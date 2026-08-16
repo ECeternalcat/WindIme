@@ -27,8 +27,10 @@
     </ScrollView>
 
     <!-- Japanese flip-phone dialog style: two compact full-width bar buttons
-         stacked vertically, about half the height of the previous 48dp rows.
-         Focus = list_focus_bg (light-blue fill + deep-blue border). -->
+         stacked vertically. D-pad selection is driven manually in code (view
+         focus is unreliable inside an AlertDialog on these devices), so the
+         bars are clickable (touch) but not focusable; the selected bar gets
+         list_focus_bg (light-blue fill + deep-blue border) painted on it. -->
     <TextView
         android:id="@+id/update_btn_positive"
         android:layout_width="match_parent"
@@ -36,7 +38,6 @@
         android:layout_marginTop="10dp"
         android:background="@drawable/list_selector"
         android:clickable="true"
-        android:focusable="true"
         android:gravity="center"
         android:minHeight="26dp"
         android:paddingStart="8dp"
@@ -55,7 +56,6 @@
         android:layout_marginTop="6dp"
         android:background="@drawable/list_selector"
         android:clickable="true"
-        android:focusable="true"
         android:gravity="center"
         android:minHeight="26dp"
         android:paddingStart="8dp"
