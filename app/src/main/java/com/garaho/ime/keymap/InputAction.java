@@ -39,6 +39,8 @@ public enum InputAction {
     ENTER,
     /** Hide the IME / exit fullscreen, keeping committed text. */
     DISMISS_IME,
+    /** Hide the IME only after the mapped key has been held for a while. */
+    COLLAPSE_IME,
     /**
      * Caps toggle for English Multi-tap (and private fields). Short press:
      * reverse the case of the next letter only. Long press: toggle global

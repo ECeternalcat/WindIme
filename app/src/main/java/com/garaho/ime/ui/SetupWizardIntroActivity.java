@@ -24,12 +24,12 @@ public class SetupWizardIntroActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_setup_wizard_intro);
         int targetSlot = getIntent().getIntExtra(SetupWizardActivity.EXTRA_TARGET_SLOT, -1);
         if (!KeymapSlots.isUser(targetSlot)) {
             finish();
             return;
         }
+        setContentView(R.layout.activity_setup_wizard_intro);
         // The soft-key section is only relevant on Kyocera devices that have
         // the physical left/right soft keys below the screen.
         if (SoftkeyGuideHelper.create(this) != null) {

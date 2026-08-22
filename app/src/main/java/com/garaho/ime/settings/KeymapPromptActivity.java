@@ -34,7 +34,8 @@ public final class KeymapPromptActivity extends Activity {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
                         new GarahoPrefs(KeymapPromptActivity.this).setKeymapPromptDismissed(true);
-                        Intent intent = new Intent(KeymapPromptActivity.this, com.garaho.ime.ui.SetupWizardIntroActivity.class);
+                        Intent intent = new Intent(KeymapPromptActivity.this,
+                                com.garaho.ime.ui.SetupWizardIntroActivity.class);
                         intent.putExtra(SetupWizardActivity.EXTRA_TARGET_SLOT, KeymapSlots.USER_MIN);
                         startActivity(intent);
                         finish();

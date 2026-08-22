@@ -66,8 +66,13 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private static final long RIME_RETRY_DELAY_MS = 3000L;
     private static final int RIME_MAX_RETRIES = 20;
     private static final long READY_FLASH_MS = 500L;
+    private static final long COLLAPSE_LONG_PRESS_MS = 700L;
     private static final int CAPITALIZE_LOOKBACK = 16;
     private static final String RIME_SCHEMA_ID = "rime_ice";
+    /** Low eight bits of EditorInfo.imeOptions contain the editor action. */
+    private static final int IME_OPTIONS_ACTION_MASK = 0x000000ff;
+    /** Action bits plus IME_FLAG_NO_ENTER_ACTION, used by center-OK handling. */
+    private static final int IME_OPTIONS_ACTION_WITH_NO_ENTER_MASK = 0x400000ff;
 
     private KeyMapper keyMapper;
     private GarahoPrefs prefs;
@@ -120,6 +125,10 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private boolean poundHeld;
     private boolean consumeBoundBackKeyUp;
     private boolean consumeMenuKeyUp;
+    /** State for the user-mapped long-press collapse action. */
+    private boolean collapseKeyTracked;
+    private boolean collapseLongFired;
+    private boolean consumeCollapseKeyUp;
     /**
      * Session-level gate for the iWnn-compatible "active finish" protocol.
      * Set to {@code true} when the user presses center OK to complete input;
@@ -153,6 +162,17 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             if (backspaceHeld && poundHeld) {
                 checkSafeEscapeCombo();
             }
+        }
+    };
+    private final Runnable collapseImeRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!collapseKeyTracked || collapseLongFired
+                    || !inputSessionActive || !inputViewActive) {
+                return;
+            }
+            collapseLongFired = true;
+            dismissIme();
         }
     };
 
@@ -298,7 +318,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             prefs.setLastHostPackage(currentHostPackage);
         }
         if (attribute != null) {
-            int actionId = attribute.imeOptions & 0x000000ff;
+            int actionId = attribute.imeOptions & IME_OPTIONS_ACTION_MASK;
             Log.d(TAG, "onStartInput restarting=" + restarting
                     + " private=" + privateInput
                     + " actionId=" + actionId
@@ -380,6 +400,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     @Override
     public void onFinishInput() {
+        cancelCollapseKeyTracking();
         inputViewActive = false;
         inputSessionActive = false;
         showModeBar = true;
@@ -619,6 +640,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         destroyed = true;
         pendingRimeEngine = null;
         resetComboHandler.removeCallbacks(resetComboRunnable);
+        resetComboHandler.removeCallbacks(collapseImeRunnable);
         resetComboHandler.removeCallbacksAndMessages(null);
         // Reset all engines to remove any pending Multi-tap Handler callbacks,
         // preventing a short-lived leak of the Service via the timeoutRunnable
@@ -779,6 +801,12 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (action != InputAction.NONE && event.getRepeatCount() == 0) {
             keyFeedback.perform();
         }
+        // Handle the mapped collapse action before the physical BACK and
+        // modal-panel branches below. A device may report this key as
+        // KEYCODE_BACK, but only its long press should hide the IME.
+        if (action == InputAction.COLLAPSE_IME) {
+            return handleCollapseKeyDown(event);
+        }
         if (action == InputAction.SHOW_QUICK_MENU) {
             if (!privateInput && event.getRepeatCount() == 0) {
                 toggleQuickMenu();
@@ -864,6 +892,13 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             return true;
         }
         InputAction action = keyMapper.resolve(keyCode, event.getScanCode());
+        if (action == InputAction.COLLAPSE_IME && consumeCollapseKeyUp) {
+            consumeCollapseKeyUp = false;
+            collapseKeyTracked = false;
+            collapseLongFired = false;
+            resetComboHandler.removeCallbacks(collapseImeRunnable);
+            return true;
+        }
         // Release of the Caps trigger: if no long press fired while it was
         // held, this is a short press (next-letter shift).
         if (consumeCapsKeyUp && action == InputAction.TOGGLE_CAPS) {
@@ -881,6 +916,17 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     @Override
     public boolean onKeyLongPress(int keyCode, KeyEvent event) {
         return super.onKeyLongPress(keyCode, event);
+    }
+
+    private boolean handleCollapseKeyDown(KeyEvent event) {
+        consumeCollapseKeyUp = true;
+        if (event.getRepeatCount() == 0) {
+            collapseKeyTracked = true;
+            collapseLongFired = false;
+            resetComboHandler.removeCallbacks(collapseImeRunnable);
+            resetComboHandler.postDelayed(collapseImeRunnable, COLLAPSE_LONG_PRESS_MS);
+        }
+        return true;
     }
 
     private void trackResetComboDown(InputAction action, KeyEvent event) {
@@ -1036,6 +1082,12 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 dismissIme();
                 return true;
 
+            case COLLAPSE_IME:
+                // Normally intercepted in onKeyDown so the action can be
+                // resolved as a long press. Keep it consumed as a safe
+                // fallback for unusual host dispatch paths.
+                return true;
+
             case TOGGLE_LANG_MODE:
                 cycleLanguageMode();
                 return true;
@@ -1110,6 +1162,8 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             case DISMISS_IME:
                 inputViewActive = false;
                 requestHideSelf(0);
+                return true;
+            case COLLAPSE_IME:
                 return true;
             default:
                 // Prediction, modes, symbols, phrases and menus stay disabled.
@@ -1204,6 +1258,8 @@ public class GarahoImeService extends InputMethodService implements EngineListen
                 return handleEnter();
             case DISMISS_IME:
                 dismissIme();
+                return true;
+            case COLLAPSE_IME:
                 return true;
             case INPUT_KEY_0:
             case INPUT_KEY_1:
@@ -1360,7 +1416,8 @@ public class GarahoImeService extends InputMethodService implements EngineListen
      *       sends {@code Finish_IME} with {@code isActiveFinish=true}.</li>
      *   <li>Sends {@code IME_User_Action_CSKKey} (harmless pre-notification;
      *       MemoPad saves here, Mail ignores it).</li>
-     *   <li>If {@code imeOptions & 0x400000ff} is a bare action 2..6 (GO, SEARCH,
+     *   <li>If {@code imeOptions & IME_OPTIONS_ACTION_WITH_NO_ENTER_MASK} is a
+     *       bare action 2..6 (GO, SEARCH,
      *       SEND, NEXT, DONE without {@code NO_ENTER_ACTION}), calls
      *       {@code performEditorAction(masked)} — covers Browser, Data Folder,
      *       and standard Android editors.</li>
@@ -1387,7 +1444,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         }
 
         // Preserve NO_ENTER_ACTION in the mask so we can distinguish bare actions.
-        int masked = info.imeOptions & 0x400000ff;
+        int masked = info.imeOptions & IME_OPTIONS_ACTION_WITH_NO_ENTER_MASK;
         if (masked >= 2 && masked <= 6) {
             // Bare GO/SEARCH/SEND/NEXT/DONE: standard editor action.
             Log.d(TAG, "handleIdleCenterOk performEditorAction(" + masked + ")");
@@ -1984,6 +2041,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     }
 
     private void clearAllEngineState() {
+        cancelCollapseKeyTracking();
         suppressEngineCallbacks = true;
         try {
             if (pinyinEngine != null) pinyinEngine.reset();
@@ -1995,6 +2053,12 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         }
         privateMultiTapState.breakCycle();
         currentComposing = "";
+    }
+
+    private void cancelCollapseKeyTracking() {
+        collapseKeyTracked = false;
+        collapseLongFired = false;
+        resetComboHandler.removeCallbacks(collapseImeRunnable);
     }
 
     private void dismissPrivatePanels() {
