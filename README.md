@@ -168,10 +168,6 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - [rime / librime](https://github.com/rime/librime) — RIME 输入法核心
 - [osfans/Trime](https://github.com/osfans/trime) — 同文输入法（Android），提供 librime 的 Android 构建与 JNI 参考
 - [iDvel/rime-ice](https://github.com/iDvel/rime-ice) — 雾凇拼音词库
-- [wairudogisu](https://github.com/wairudogisu) — 帮忙测试以及修复了很多bug（PR #1 候选与软键交互优化）
+- [wairudogisu](https://github.com/wairudogisu) — 新功能添加，测试以及修复bug（详见Pull request）
 
----
 
-## 状态
-
-当前 `versionCode 25 / 0.5.8`。中文 T9（三层 + 循环选音）、英文 T9、Multi-tap（Caps 大小写）、模式条、符号/定型文、设置页、用户词典、带用户须知的首次使用向导、长按收起输入法、私密输入框、GitHub 检查更新均已可用。草稿版用户手册见 `Document/instructions.md`，设计与路线图详见 `Document/`。

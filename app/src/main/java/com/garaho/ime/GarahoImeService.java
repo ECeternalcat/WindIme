@@ -66,7 +66,6 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private static final long RIME_RETRY_DELAY_MS = 3000L;
     private static final int RIME_MAX_RETRIES = 20;
     private static final long READY_FLASH_MS = 500L;
-    private static final long COLLAPSE_LONG_PRESS_MS = 700L;
     private static final int CAPITALIZE_LOOKBACK = 16;
     private static final String RIME_SCHEMA_ID = "rime_ice";
     /** Low eight bits of EditorInfo.imeOptions contain the editor action. */
@@ -124,6 +123,8 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private boolean backspaceHeld;
     private boolean poundHeld;
     private boolean consumeBoundBackKeyUp;
+    /** Long-press resolution state for the back key bound as backspace. */
+    private boolean boundBackLongFired;
     private boolean consumeMenuKeyUp;
     /** State for the user-mapped long-press collapse action. */
     private boolean collapseKeyTracked;
@@ -847,6 +848,19 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (keyCode == KeyEvent.KEYCODE_BACK && action == InputAction.BACKSPACE_DELETE) {
             consumeBoundBackKeyUp = true;
             trackResetComboDown(action, event);
+            if (isBoundBackLongPressCollapse()) {
+                // iWnn-style: the tap deletes on key release; holding past the
+                // threshold collapses the IME immediately (rapid-delete is
+                // disabled in this mode, the two cannot coexist).
+                if (event.getRepeatCount() == 0) {
+                    boundBackLongFired = false;
+                } else if (!boundBackLongFired
+                        && event.getEventTime() - event.getDownTime() >= longPressThresholdMs()) {
+                    boundBackLongFired = true;
+                    dismissIme();
+                }
+                return true;
+            }
             if (privateInput) {
                 privateMultiTapState.breakCycle();
                 return handlePrivateBoundBackKey();
@@ -889,6 +903,19 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (keyCode == KeyEvent.KEYCODE_BACK && consumeBoundBackKeyUp) {
             consumeBoundBackKeyUp = false;
             trackResetComboUp(InputAction.BACKSPACE_DELETE);
+            if (boundBackLongFired) {
+                boundBackLongFired = false;
+                return true;
+            }
+            if (isBoundBackLongPressCollapse()) {
+                // Deferred tap: no long press fired while held, so run the
+                // delete (or hide-when-empty) step now.
+                if (privateInput) {
+                    privateMultiTapState.breakCycle();
+                    return handlePrivateBoundBackKey();
+                }
+                return handleBoundBackKey();
+            }
             return true;
         }
         InputAction action = keyMapper.resolve(keyCode, event.getScanCode());
@@ -924,7 +951,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             collapseKeyTracked = true;
             collapseLongFired = false;
             resetComboHandler.removeCallbacks(collapseImeRunnable);
-            resetComboHandler.postDelayed(collapseImeRunnable, COLLAPSE_LONG_PRESS_MS);
+            resetComboHandler.postDelayed(collapseImeRunnable, longPressThresholdMs());
         }
         return true;
     }
@@ -956,12 +983,20 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     }
 
     /**
-     * Long-press threshold for the Caps trigger. Deliberately reuses the
-     * user's Multi-tap interval setting: it is the reaction window the user
-     * has already confirmed comfortable (settings - input - Multi-tap interval).
+     * Long-press threshold shared by every long-press feature (Caps, the
+     * standalone collapse key, the back-as-backspace return key). Deliberately
+     * reuses the user's Multi-tap interval setting: it is the reaction window
+     * the user has already confirmed comfortable (settings - input).
      */
-    private int capsLongPressThresholdMs() {
+    private int longPressThresholdMs() {
         return prefs == null ? 600 : Math.max(100, prefs.getMultiTapTimeout());
+    }
+
+    /** Return key bound as backspace + collapse long-press mode selected. */
+    private boolean isBoundBackLongPressCollapse() {
+        return prefs != null && keyMapper != null
+                && keyMapper.isBackKeyBoundToBackspace()
+                && prefs.isBackKeyLongPressCollapse();
     }
 
     private boolean handleCapsKeyDown(InputAction action, KeyEvent event) {
@@ -970,7 +1005,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             capsKeyTracked = true;
             capsLongFired = false;
         } else if (capsKeyTracked && !capsLongFired
-                && event.getEventTime() - event.getDownTime() >= capsLongPressThresholdMs()) {
+                && event.getEventTime() - event.getDownTime() >= longPressThresholdMs()) {
             capsLongFired = true;
             applyCapsPress(true);
         }

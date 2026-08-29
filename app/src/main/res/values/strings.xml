@@ -270,6 +270,10 @@
     <string name="update_fetch_failed">获取更新日志失败，请稍后再试</string>
     <string name="action_collapse">长按收起输入法</string>
     <string name="wizard_collapse_tip">请按下要绑定的按键；使用时长按此键收起输入法</string>
+    <string name="keymap_back_long_press">返回键长按行为</string>
+    <string name="back_long_press_collapse">收起输入法</string>
+    <string name="back_long_press_fast_delete">快速删除</string>
+    <string name="back_long_press_unavailable">未绑定（需返回键为退格）</string>
     <string name="wizard_notice_title">使用说明与免责声明</string>
     <string name="wizard_notice_body">欢迎使用 Wind IME（实体键盘/翻盖机专属输入法）！\n\n隐私与安全说明：本应用不会主动上传任何输入内容；内置 Rime 词库完全离线，联网功能仅用于连接GitHub主动检查更新。输入法的联想、学习及密码字段处理，严格遵循当前输入框与系统设定。\n\n免责声明：由于设备厂商的按键逻辑与系统行为存在差异，本应用不保证兼容所有设备，请您在使用前自行评估兼容性风险。点击继续即视为您已充分阅读并同意上述条款。</string>
     <string name="wizard_notice_accept">我已阅读并同意，继续设置</string>

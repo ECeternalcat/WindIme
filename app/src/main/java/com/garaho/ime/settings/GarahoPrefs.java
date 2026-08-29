@@ -37,6 +37,7 @@ public final class GarahoPrefs {
     private static final String KEY_CANDIDATE_SOUND_MODE = "candidate_sound_mode";
     private static final String KEY_DEFAULT_CANDIDATE_LAYER = "default_candidate_layer";
     private static final String KEY_LAST_UPDATE_CHECK = "last_update_check_epoch";
+    private static final String KEY_BACK_LONG_PRESS = "back_key_long_press";
 
     public static final String FEEDBACK_VIBRATE = "vibrate";
     public static final String FEEDBACK_SOUND = "sound";
@@ -47,6 +48,11 @@ public final class GarahoPrefs {
 
     public static final String DEFAULT_LAYER_CANDIDATE = "candidate";
     public static final String DEFAULT_LAYER_PINYIN = "pinyin";
+
+    /** Return key bound as backspace: long press collapses the IME (iWnn-style). */
+    public static final String BACK_LONG_PRESS_COLLAPSE = "collapse";
+    /** Return key bound as backspace: long press keeps rapid-deleting. */
+    public static final String BACK_LONG_PRESS_FAST_DELETE = "fast_delete";
 
     // English defaults to Multi-tap: the target audience is Chinese users,
     // whose typical English input is passwords/abbreviations rather than
@@ -256,6 +262,27 @@ public final class GarahoPrefs {
 
     public void setLastUpdateCheck(long epochMs) {
         sp.edit().putLong(KEY_LAST_UPDATE_CHECK, epochMs).apply();
+    }
+
+    /**
+     * Behaviour of the return key when it is calibrated as backspace:
+     * {@link #BACK_LONG_PRESS_COLLAPSE} (default, iWnn-style: tap deletes,
+     * long press collapses the IME) or {@link #BACK_LONG_PRESS_FAST_DELETE}
+     * (holding rapid-deletes, no collapse). Only meaningful while the system
+     * back key is mapped to BACKSPACE_DELETE.
+     */
+    public String getBackKeyLongPress() {
+        String v = sp.getString(KEY_BACK_LONG_PRESS, BACK_LONG_PRESS_COLLAPSE);
+        return BACK_LONG_PRESS_FAST_DELETE.equals(v)
+                ? BACK_LONG_PRESS_FAST_DELETE : BACK_LONG_PRESS_COLLAPSE;
+    }
+
+    public void setBackKeyLongPress(String mode) {
+        sp.edit().putString(KEY_BACK_LONG_PRESS, mode).apply();
+    }
+
+    public boolean isBackKeyLongPressCollapse() {
+        return BACK_LONG_PRESS_COLLAPSE.equals(getBackKeyLongPress());
     }
 
     /** Wipe every persisted preference, returning to compiled defaults. */
