@@ -32,10 +32,16 @@ public abstract class BaseMenuActivity extends Activity {
 
     protected void setMenuItems(String[] items, android.widget.AdapterView.OnItemClickListener listener) {
         ArrayAdapter<String> adapter = new ArrayAdapter<>(this, R.layout.list_item_menu, items);
+        // Remember the focused row across rebuilds (value-cycling rows call
+        // rebuild() on every OK) until the page is destroyed, so the user can
+        // tap OK repeatedly without scrolling back down each time.
+        int keep = listView.getSelectedItemPosition();
         listView.setAdapter(adapter);
         listView.setOnItemClickListener(listener);
         if (items.length > 0) {
-            listView.setSelection(0);
+            int target = keep == android.widget.AdapterView.INVALID_POSITION
+                    || keep >= items.length ? 0 : keep;
+            listView.setSelection(target);
             listView.requestFocus();
         }
     }

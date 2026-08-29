@@ -157,6 +157,17 @@ public class SetupWizardActivity extends Activity {
             tipView.setVisibility(android.view.View.VISIBLE);
             return true;
         }
+        // The return key may combine short and long press: when it is already
+        // captured as backspace and the user offers the same key for the
+        // collapse step, do not reject it as a duplicate - let the user pick
+        // the long-press behaviour (the short press stays backspace either
+        // way). The choice is stored in the back-key long-press setting.
+        if (target == InputAction.COLLAPSE_IME
+                && keyCode == KeyEvent.KEYCODE_BACK
+                && capturedBackspaceOnBackKey()) {
+            showBackKeyLongPressChoice();
+            return true;
+        }
         if (isAlreadyCaptured(keyCode, event.getScanCode())) {
             tipView.setText(R.string.wizard_key_duplicate);
             tipView.setVisibility(android.view.View.VISIBLE);
@@ -207,6 +218,41 @@ public class SetupWizardActivity extends Activity {
             }
         }
         return false;
+    }
+
+    /** Whether the return key (KEYCODE_BACK) was captured as backspace earlier in this wizard run. */
+    private boolean capturedBackspaceOnBackKey() {
+        KeyMapConfig.Mapping backspace = captured.get(InputAction.BACKSPACE_DELETE);
+        return backspace != null && backspace.keycode == KeyEvent.KEYCODE_BACK;
+    }
+
+    /**
+     * Long-press behaviour choice for the return key that is already bound as
+     * backspace. Short press stays backspace either way; the long press either
+     * collapses the IME (iWnn-style, also the settings default) or keeps
+     * rapid-deleting. The chosen value lands in the same setting the
+     * input-and-keys page exposes.
+     */
+    private void showBackKeyLongPressChoice() {
+        final String[] options = {
+                getString(R.string.back_long_press_collapse),
+                getString(R.string.back_long_press_fast_delete),
+        };
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.wizard_back_long_press_title)
+                .setMessage(R.string.wizard_back_long_press_message)
+                .setItems(options, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        prefs.setBackKeyLongPress(which == 0
+                                ? com.garaho.ime.settings.GarahoPrefs.BACK_LONG_PRESS_COLLAPSE
+                                : com.garaho.ime.settings.GarahoPrefs.BACK_LONG_PRESS_FAST_DELETE);
+                        skipped.remove(InputAction.COLLAPSE_IME);
+                        buzz();
+                        advanceStep();
+                    }
+                })
+                .show();
     }
 
     private void renderStep() {
