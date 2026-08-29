@@ -174,4 +174,4 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## 状态
 
-当前 `versionCode 24 / 0.5.7`。中文 T9（三层 + 循环选音）、英文 T9、Multi-tap（Caps 大小写）、模式条、符号/定型文、设置页、用户词典、首次使用向导、私密输入框、GitHub 检查更新均已可用。草稿版用户手册见 `Document/instructions.md`，设计与路线图详见 `Document/`。
+当前 `versionCode 25 / 0.5.8`。中文 T9（三层 + 循环选音）、英文 T9、Multi-tap（Caps 大小写）、模式条、符号/定型文、设置页、用户词典、带用户须知的首次使用向导、长按收起输入法、私密输入框、GitHub 检查更新均已可用。草稿版用户手册见 `Document/instructions.md`，设计与路线图详见 `Document/`。

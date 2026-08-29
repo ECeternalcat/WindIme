@@ -237,6 +237,13 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
         if (!ok) {
             return false;
         }
+
+        // A candidate can consume only a prefix of the current composition.
+        String rawTail = safeRawInput();
+        if (keepNativeTailAfterSelection(chosen, rawTail)) {
+            return true;
+        }
+
         try {
             Rime.commitRimeComposition();
         } catch (Throwable ignored) {
@@ -247,6 +254,76 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
                 : (chosen != null ? chosen : "");
         clearAfterCommit(text);
         return true;
+    }
+
+    /**
+     * Preserve a raw pinyin tail left by Rime after a partial candidate was
+     * selected. Returns false when the selection consumed the whole input or
+     * when the native state does not expose a usable suffix.
+     */
+    private boolean keepNativeTailAfterSelection(String chosen, String rawTail) {
+        String allDigits = session.getDigits();
+        String tailDigits = PinyinSyllables.t9Encode(rawTail);
+        if (!isUsableTail(allDigits, tailDigits)) {
+            // Some older librime builds expose the complete raw input (or an
+            // empty string) after selecting a candidate. In that case infer
+            // the remaining syllables from the current segmentation and the
+            // selected Han-character count.
+            tailDigits = inferTailDigits(chosen, session.getPhraseKey(), allDigits);
+        }
+        if (!isUsableTail(allDigits, tailDigits)) {
+            return false;
+        }
+
+        CommitProto selectedCommit = safeCommit();
+        String committed = chosen;
+        if (selectedCommit != null && selectedCommit.text != null
+                && !selectedCommit.text.isEmpty()) {
+            committed = selectedCommit.text;
+        }
+        try {
+            Rime.clearRimeComposition();
+        } catch (Throwable ignored) {
+        }
+        session.reset();
+        for (int i = 0; i < tailDigits.length(); i++) {
+            session.processDigit(tailDigits.charAt(i) - '0');
+        }
+        lastFedLetters = "";
+        if (listener != null && committed != null && !committed.isEmpty()) {
+            listener.onCommit(committed);
+        }
+        pushPhraseToRime();
+        return true;
+    }
+
+    private static boolean isUsableTail(String allDigits, String tailDigits) {
+        return allDigits != null && !allDigits.isEmpty()
+                && tailDigits != null && !tailDigits.isEmpty()
+                && tailDigits.length() < allDigits.length()
+                && allDigits.endsWith(tailDigits);
+    }
+
+    private static String inferTailDigits(String chosen, String phraseKey, String allDigits) {
+        if (chosen == null || chosen.isEmpty() || phraseKey == null || phraseKey.isEmpty()
+                || allDigits == null || allDigits.isEmpty()) {
+            return "";
+        }
+        String[] syllables = phraseKey.split("'");
+        int consumed = chosen.codePointCount(0, chosen.length());
+        if (consumed <= 0 || consumed >= syllables.length) {
+            return "";
+        }
+        StringBuilder tail = new StringBuilder();
+        for (int i = consumed; i < syllables.length; i++) {
+            String digits = PinyinSyllables.t9Encode(syllables[i]);
+            if (digits.isEmpty()) {
+                return "";
+            }
+            tail.append(digits);
+        }
+        String result = tail.toString();
+        return allDigits.endsWith(result) ? result : "";
     }
 
     private boolean commitPrefixAndKeepTail(String chosen) {
@@ -285,6 +362,7 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
         composing = "";
         candidates = Collections.emptyList();
         nativeCandidates = Collections.emptyList();
+        lastFedLetters = "";
         Rime.clearRimeComposition();
         if (listener != null) {
             listener.onComposingChanged(composing);
@@ -477,6 +555,16 @@ public final class RimeEngine implements ImeEngine, LayeredPinyinEngine {
         } catch (Throwable t) {
             Log.w(TAG, "getRimeCommit failed: " + t);
             return null;
+        }
+    }
+
+    private static String safeRawInput() {
+        try {
+            String raw = Rime.getRimeRawInput();
+            return raw == null ? "" : raw;
+        } catch (Throwable t) {
+            Log.w(TAG, "getRimeRawInput failed: " + t);
+            return "";
         }
     }
 

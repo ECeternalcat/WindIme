@@ -44,7 +44,7 @@ public class SetupWizardActivity extends Activity {
             InputAction.BACKSPACE_DELETE,
             InputAction.ENTER,
             InputAction.TOGGLE_CAPS,
-            InputAction.DISMISS_IME,
+            InputAction.COLLAPSE_IME,
     };
 
     /** Extra steps appended only on Kyocera devices with a Softkey Guide. */
@@ -146,7 +146,9 @@ public class SetupWizardActivity extends Activity {
             return true;
         }
         InputAction target = steps[currentStep];
-        if (keyCode == KeyEvent.KEYCODE_BACK && target != InputAction.BACKSPACE_DELETE) {
+        if (keyCode == KeyEvent.KEYCODE_BACK
+                && target != InputAction.BACKSPACE_DELETE
+                && target != InputAction.COLLAPSE_IME) {
             finish();
             return true;
         }
@@ -216,6 +218,9 @@ public class SetupWizardActivity extends Activity {
         promptView.setText(getString(R.string.wizard_press_action_prompt, displayName(a)));
         if (a == InputAction.BACKSPACE_DELETE) {
             tipView.setText(R.string.wizard_back_as_delete_tip);
+            tipView.setVisibility(android.view.View.VISIBLE);
+        } else if (a == InputAction.COLLAPSE_IME) {
+            tipView.setText(R.string.wizard_collapse_tip);
             tipView.setVisibility(android.view.View.VISIBLE);
         } else if (a == InputAction.SOFTKEY_LEFT || a == InputAction.SOFTKEY_RIGHT) {
             tipView.setText(R.string.wizard_softkey_tip);
@@ -307,6 +312,7 @@ public class SetupWizardActivity extends Activity {
             case ENTER: return getString(R.string.action_enter);
             case TOGGLE_CAPS: return getString(R.string.action_caps);
             case DISMISS_IME: return getString(R.string.action_dismiss);
+            case COLLAPSE_IME: return getString(R.string.action_collapse);
             case CONFIRM_SELECTION: return getString(R.string.action_confirm);
             case NAV_UP: return getString(R.string.action_nav_up);
             case NAV_DOWN: return getString(R.string.action_nav_down);

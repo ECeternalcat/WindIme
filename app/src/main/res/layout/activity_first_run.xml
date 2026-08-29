@@ -46,7 +46,69 @@
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <!-- Step 0: Welcome -->
+        <!-- Step 0: Usage notice and disclaimer -->
+        <LinearLayout
+            android:id="@+id/firstrun_step_notice"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="20dp"
+                android:paddingTop="18dp"
+                android:paddingEnd="20dp"
+                android:paddingBottom="10dp"
+                android:text="@string/wizard_notice_title"
+                android:textColor="@color/brand_primary"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:fillViewport="true">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="20dp"
+                    android:paddingBottom="16dp"
+                    android:text="@string/wizard_notice_body"
+                    android:textColor="@color/primary_text"
+                    android:textSize="15sp" />
+            </ScrollView>
+
+            <TextView
+                android:id="@+id/firstrun_notice_accept"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/list_selector"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:minHeight="48dp"
+                android:padding="10dp"
+                android:text="@string/wizard_notice_accept"
+                android:textColor="@color/menu_item_text"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:padding="8dp"
+                android:text="@string/wizard_notice_controls"
+                android:textColor="@color/primary_text"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- Step 1: Welcome -->
         <LinearLayout
             android:id="@+id/firstrun_step_welcome"
             android:layout_width="match_parent"
@@ -76,7 +138,7 @@
                 android:textSize="16sp" />
         </LinearLayout>
 
-        <!-- Step 1: Set default IME -->
+        <!-- Step 2: Set default IME -->
         <LinearLayout
             android:id="@+id/firstrun_step_default"
             android:layout_width="match_parent"
@@ -132,7 +194,7 @@
                 android:focusable="true" />
         </LinearLayout>
 
-        <!-- Step 2: Key calibration -->
+        <!-- Step 3: Key calibration -->
         <LinearLayout
             android:id="@+id/firstrun_step_calibrate"
             android:layout_width="match_parent"
@@ -188,7 +250,7 @@
                 android:focusable="true" />
         </LinearLayout>
 
-        <!-- Step 3: Done -->
+        <!-- Step 4: Done -->
         <LinearLayout
             android:id="@+id/firstrun_step_done"
             android:layout_width="match_parent"

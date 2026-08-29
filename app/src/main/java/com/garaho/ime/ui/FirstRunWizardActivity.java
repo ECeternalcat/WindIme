@@ -17,8 +17,9 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 /**
- * First-run wizard. Four stacked pages switched by D-Pad / OK:
+ * First-run wizard. Five stacked pages switched by D-Pad / OK:
  * <ol>
+ *   <li>Usage notice and disclaimer.</li>
  *   <li>Welcome.</li>
  *   <li>Set Wind IME as the default input method (button opens
  *       {@link ImeSetupActivity}; "继续" is gated on
@@ -28,21 +29,22 @@ import android.widget.Toast;
  *   <li>Done.</li>
  * </ol>
  * Shown by {@link LauncherActivity} until {@link GarahoPrefs#isFirstRunCompleted()}
- * is true. BACK steps back one page (welcome cancels).
+ * is true. BACK steps back one page (the notice cancels).
  */
 public class FirstRunWizardActivity extends Activity {
 
-    private static final int STEP_WELCOME = 0;
-    private static final int STEP_DEFAULT_IME = 1;
-    private static final int STEP_CALIBRATE = 2;
-    private static final int STEP_DONE = 3;
+    private static final int STEP_NOTICE = 0;
+    private static final int STEP_WELCOME = 1;
+    private static final int STEP_DEFAULT_IME = 2;
+    private static final int STEP_CALIBRATE = 3;
+    private static final int STEP_DONE = 4;
 
     private static final int TOTAL_STEPS = 2;
 
     private GarahoPrefs prefs;
-    private int step = STEP_WELCOME;
+    private int step = STEP_NOTICE;
 
-    private final View[] stepViews = new View[4];
+    private final View[] stepViews = new View[5];
     private TextView stepIndicator;
     private TextView defaultStatus;
     private TextView calibrateStatus;
@@ -53,6 +55,7 @@ public class FirstRunWizardActivity extends Activity {
         setContentView(R.layout.activity_first_run);
         prefs = new GarahoPrefs(this);
 
+        stepViews[STEP_NOTICE] = findViewById(R.id.firstrun_step_notice);
         stepViews[STEP_WELCOME] = findViewById(R.id.firstrun_step_welcome);
         stepViews[STEP_DEFAULT_IME] = findViewById(R.id.firstrun_step_default);
         stepViews[STEP_CALIBRATE] = findViewById(R.id.firstrun_step_calibrate);
@@ -61,6 +64,7 @@ public class FirstRunWizardActivity extends Activity {
         defaultStatus = findViewById(R.id.firstrun_default_status);
         calibrateStatus = findViewById(R.id.firstrun_calibrate_status);
 
+        findViewById(R.id.firstrun_notice_accept).setOnClickListener(v -> showStep(STEP_WELCOME));
         findViewById(R.id.firstrun_default_btn).setOnClickListener(v ->
                 startActivity(new Intent(this, ImeSetupActivity.class)));
         findViewById(R.id.firstrun_default_continue).setOnClickListener(v -> onDefaultContinue());
@@ -69,7 +73,7 @@ public class FirstRunWizardActivity extends Activity {
                         .putExtra(KeymapProfilesActivity.EXTRA_CALIBRATION_PICKER, true)));
         findViewById(R.id.firstrun_calibrate_continue).setOnClickListener(v -> onCalibrateContinue());
 
-        showStep(STEP_WELCOME);
+        showStep(STEP_NOTICE);
     }
 
     @Override
@@ -83,8 +87,8 @@ public class FirstRunWizardActivity extends Activity {
         for (int i = 0; i < stepViews.length; i++) {
             stepViews[i].setVisibility(i == s ? View.VISIBLE : View.GONE);
         }
-        // The two configuration pages carry a "n / 2" indicator; the welcome
-        // and done pages do not (they are framing, not numbered steps).
+        // The two configuration pages carry a "n / 2" indicator; the notice,
+        // welcome and done pages do not (they are framing, not numbered steps).
         if (s == STEP_DEFAULT_IME) {
             stepIndicator.setText(getString(R.string.firstrun_step_format, 1, TOTAL_STEPS));
             stepIndicator.setVisibility(View.VISIBLE);
@@ -96,6 +100,9 @@ public class FirstRunWizardActivity extends Activity {
         }
         View focus = null;
         switch (s) {
+            case STEP_NOTICE:
+                focus = findViewById(R.id.firstrun_notice_accept);
+                break;
             case STEP_WELCOME:
                 focus = stepViews[STEP_WELCOME];
                 break;
@@ -163,8 +170,10 @@ public class FirstRunWizardActivity extends Activity {
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
-            if (step == STEP_WELCOME) {
+            if (step == STEP_NOTICE) {
                 finish();
+            } else if (step == STEP_WELCOME) {
+                showStep(STEP_NOTICE);
             } else if (step == STEP_DEFAULT_IME) {
                 showStep(STEP_WELCOME);
             } else if (step == STEP_CALIBRATE) {
@@ -178,9 +187,13 @@ public class FirstRunWizardActivity extends Activity {
             if (event.getRepeatCount() > 0) {
                 return true;
             }
-            // Welcome and done pages own their OK handling here. The two
-            // configuration pages have focusable buttons that consume OK
-            // themselves, so this branch is never reached for them.
+            // The notice, welcome and done pages own their OK handling here.
+            // The two configuration pages have focusable buttons that consume
+            // OK themselves, so this branch is normally not reached for them.
+            if (step == STEP_NOTICE) {
+                showStep(STEP_WELCOME);
+                return true;
+            }
             if (step == STEP_WELCOME) {
                 showStep(STEP_DEFAULT_IME);
                 return true;
