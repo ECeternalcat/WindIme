@@ -234,25 +234,33 @@ public class SetupWizardActivity extends Activity {
      * input-and-keys page exposes.
      */
     private void showBackKeyLongPressChoice() {
-        final String[] options = {
-                getString(R.string.back_long_press_collapse),
-                getString(R.string.back_long_press_fast_delete),
-        };
         new AlertDialog.Builder(this)
                 .setTitle(R.string.wizard_back_long_press_title)
                 .setMessage(R.string.wizard_back_long_press_message)
-                .setItems(options, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        prefs.setBackKeyLongPress(which == 0
-                                ? com.garaho.ime.settings.GarahoPrefs.BACK_LONG_PRESS_COLLAPSE
-                                : com.garaho.ime.settings.GarahoPrefs.BACK_LONG_PRESS_FAST_DELETE);
-                        skipped.remove(InputAction.COLLAPSE_IME);
-                        buzz();
-                        advanceStep();
-                    }
-                })
+                .setPositiveButton(R.string.back_long_press_collapse,
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                chooseBackKeyLongPress(true);
+                            }
+                        })
+                .setNegativeButton(R.string.back_long_press_fast_delete,
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                chooseBackKeyLongPress(false);
+                            }
+                        })
                 .show();
+    }
+
+    private void chooseBackKeyLongPress(boolean collapse) {
+        prefs.setBackKeyLongPress(collapse
+                ? com.garaho.ime.settings.GarahoPrefs.BACK_LONG_PRESS_COLLAPSE
+                : com.garaho.ime.settings.GarahoPrefs.BACK_LONG_PRESS_FAST_DELETE);
+        skipped.remove(InputAction.COLLAPSE_IME);
+        buzz();
+        advanceStep();
     }
 
     private void renderStep() {
