@@ -68,6 +68,8 @@ public class SetupWizardActivity extends Activity {
     private int targetSlot;
     private boolean finished;
     private boolean isKyocera;
+    /** Return-key combo confirmed this run (backspace short + collapse long). */
+    private boolean backKeyCollapseChosen;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -159,13 +161,13 @@ public class SetupWizardActivity extends Activity {
         }
         // The return key may combine short and long press: when it is already
         // captured as backspace and the user offers the same key for the
-        // collapse step, do not reject it as a duplicate - let the user pick
-        // the long-press behaviour (the short press stays backspace either
-        // way). The choice is stored in the back-key long-press setting.
+        // collapse step, do not reject it as a duplicate - confirm the combo
+        // (short press stays backspace; long press collapse replaces the
+        // default rapid-delete).
         if (target == InputAction.COLLAPSE_IME
                 && keyCode == KeyEvent.KEYCODE_BACK
                 && capturedBackspaceOnBackKey()) {
-            showBackKeyLongPressChoice();
+            showBackKeyCollapseConfirm();
             return true;
         }
         if (isAlreadyCaptured(keyCode, event.getScanCode())) {
@@ -176,6 +178,11 @@ public class SetupWizardActivity extends Activity {
         KeyMapConfig.Mapping m = new KeyMapConfig.Mapping(event.getScanCode(), keyCode, target);
         captured.put(target, m);
         skipped.remove(target);
+        if (target == InputAction.COLLAPSE_IME) {
+            // A standalone collapse binding on another key means the combo
+            // was not used.
+            backKeyCollapseChosen = false;
+        }
         buzz();
         advanceStep();
         return true;
@@ -196,6 +203,11 @@ public class SetupWizardActivity extends Activity {
         InputAction target = steps[currentStep];
         captured.remove(target);
         skipped.remove(target);
+        if (target == InputAction.COLLAPSE_IME) {
+            // Re-entering the collapse step invalidates a previously
+            // confirmed combo.
+            backKeyCollapseChosen = false;
+        }
         renderStep();
     }
 
@@ -233,34 +245,29 @@ public class SetupWizardActivity extends Activity {
      * rapid-deleting. The chosen value lands in the same setting the
      * input-and-keys page exposes.
      */
-    private void showBackKeyLongPressChoice() {
+    /**
+     * Confirmation shown when the user offers the return key (already
+     * captured as backspace) for the long-press-collapse step: continuing
+     * overrides the key's default long-press rapid-delete with collapse. The
+     * choice is committed in {@link #finishWizard()} so a cancelled wizard
+     * never changes the stored behaviour.
+     */
+    private void showBackKeyCollapseConfirm() {
         new AlertDialog.Builder(this)
-                .setTitle(R.string.wizard_back_long_press_title)
-                .setMessage(R.string.wizard_back_long_press_message)
-                .setPositiveButton(R.string.back_long_press_collapse,
+                .setTitle(R.string.action_collapse)
+                .setMessage(R.string.wizard_back_key_collapse_message)
+                .setPositiveButton(R.string.wizard_back_key_collapse_yes,
                         new DialogInterface.OnClickListener() {
                             @Override
                             public void onClick(DialogInterface dialog, int which) {
-                                chooseBackKeyLongPress(true);
+                                backKeyCollapseChosen = true;
+                                skipped.remove(InputAction.COLLAPSE_IME);
+                                buzz();
+                                advanceStep();
                             }
                         })
-                .setNegativeButton(R.string.back_long_press_fast_delete,
-                        new DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(DialogInterface dialog, int which) {
-                                chooseBackKeyLongPress(false);
-                            }
-                        })
+                .setNegativeButton(R.string.wizard_back_key_collapse_no, null)
                 .show();
-    }
-
-    private void chooseBackKeyLongPress(boolean collapse) {
-        prefs.setBackKeyLongPress(collapse
-                ? com.garaho.ime.settings.GarahoPrefs.BACK_LONG_PRESS_COLLAPSE
-                : com.garaho.ime.settings.GarahoPrefs.BACK_LONG_PRESS_FAST_DELETE);
-        skipped.remove(InputAction.COLLAPSE_IME);
-        buzz();
-        advanceStep();
     }
 
     private void renderStep() {
@@ -295,11 +302,21 @@ public class SetupWizardActivity extends Activity {
             sb.append(displayName(action)).append(" -> ")
                     .append(getString(R.string.wizard_skipped)).append('\n');
         }
+        if (backKeyCollapseChosen) {
+            sb.append(displayName(InputAction.COLLAPSE_IME)).append(" -> ")
+                    .append(getString(R.string.wizard_collapse_combo_status)).append('\n');
+        }
         statusView.setText(sb.toString());
     }
 
     private void finishWizard() {
         finished = true;
+        // Commit the return-key combo decision with the mapping: collapse only
+        // when explicitly confirmed this run, otherwise the default hold
+        // rapid-delete applies.
+        prefs.setBackKeyLongPress(backKeyCollapseChosen
+                ? GarahoPrefs.BACK_LONG_PRESS_COLLAPSE
+                : GarahoPrefs.BACK_LONG_PRESS_FAST_DELETE);
         final KeyMapConfig result = KeyMapConfig.merge(baseConfig, captured);
         result.deviceProfile = "User_Keymap_" + targetSlot;
         result.version = KeyMapConfig.DEFAULT_VERSION;

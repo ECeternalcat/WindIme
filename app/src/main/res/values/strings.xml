@@ -270,12 +270,10 @@
     <string name="update_fetch_failed">获取更新日志失败，请稍后再试</string>
     <string name="action_collapse">长按收起输入法</string>
     <string name="wizard_collapse_tip">请按下要绑定的按键；使用时长按此键收起输入法</string>
-    <string name="keymap_back_long_press">返回键长按行为</string>
-    <string name="back_long_press_collapse">收起输入法</string>
-    <string name="back_long_press_fast_delete">快速删除</string>
-    <string name="back_long_press_unavailable">未绑定（需返回键为退格）</string>
-    <string name="wizard_back_long_press_title">返回键长按行为</string>
-    <string name="wizard_back_long_press_message">该键已绑定为退格删除（短按删除不变）。长按它时希望执行哪个操作？稍后可在 设置 → 输入法与按键 中修改。</string>
+    <string name="wizard_back_key_collapse_message">返回键已绑定为退格删除，其长按默认为快速删除。继续将把长按收起输入法绑定到该键，并取代快速删除（短按删除不变）。是否继续？</string>
+    <string name="wizard_back_key_collapse_yes">继续</string>
+    <string name="wizard_back_key_collapse_no">取消</string>
+    <string name="wizard_collapse_combo_status">返回键（长按组合，取代快删）</string>
     <string name="wizard_notice_title">使用说明与免责声明</string>
     <string name="wizard_notice_body">欢迎使用 Wind IME（实体键盘/翻盖机专属输入法）！\n\n隐私与安全说明：本应用不会主动上传任何输入内容；内置 Rime 词库完全离线，联网功能仅用于连接GitHub主动检查更新。输入法的联想、学习及密码字段处理，严格遵循当前输入框与系统设定。\n\n免责声明：由于设备厂商的按键逻辑与系统行为存在差异，本应用不保证兼容所有设备，请您在使用前自行评估兼容性风险。点击继续即视为您已充分阅读并同意上述条款。</string>
     <string name="wizard_notice_accept">我已阅读并同意，继续设置</string>

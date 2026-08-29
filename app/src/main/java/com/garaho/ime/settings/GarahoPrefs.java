@@ -265,16 +265,17 @@ public final class GarahoPrefs {
     }
 
     /**
-     * Behaviour of the return key when it is calibrated as backspace:
-     * {@link #BACK_LONG_PRESS_COLLAPSE} (default, iWnn-style: tap deletes,
-     * long press collapses the IME) or {@link #BACK_LONG_PRESS_FAST_DELETE}
-     * (holding rapid-deletes, no collapse). Only meaningful while the system
-     * back key is mapped to BACKSPACE_DELETE.
+     * Internal state for the return key calibrated as backspace:
+     * {@link #BACK_LONG_PRESS_FAST_DELETE} is the default (hold rapid-deletes);
+     * {@link #BACK_LONG_PRESS_COLLAPSE} is set by the calibration wizard when
+     * the user confirms binding long-press-collapse onto the same return key
+     * (there is no settings-page toggle any more - the intent is declared at
+     * calibration time).
      */
     public String getBackKeyLongPress() {
-        String v = sp.getString(KEY_BACK_LONG_PRESS, BACK_LONG_PRESS_COLLAPSE);
-        return BACK_LONG_PRESS_FAST_DELETE.equals(v)
-                ? BACK_LONG_PRESS_FAST_DELETE : BACK_LONG_PRESS_COLLAPSE;
+        String v = sp.getString(KEY_BACK_LONG_PRESS, BACK_LONG_PRESS_FAST_DELETE);
+        return BACK_LONG_PRESS_COLLAPSE.equals(v)
+                ? BACK_LONG_PRESS_COLLAPSE : BACK_LONG_PRESS_FAST_DELETE;
     }
 
     public void setBackKeyLongPress(String mode) {
