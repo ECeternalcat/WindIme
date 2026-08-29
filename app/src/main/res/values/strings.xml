@@ -84,7 +84,7 @@
     <string name="ime_setup_pending">未完成</string>
     <string name="input_key_feedback">按键反馈</string>
     <string name="input_auto_caps">首字母大写</string>
-    <string name="input_mtap_interval">Multi-tap 间隔</string>
+    <string name="input_mtap_interval">长按间隔</string>
     <string name="input_fullscreen_compat">全屏兼容列表</string>
     <string name="fullscreen_compat_title">全屏兼容列表</string>
     <string name="fullscreen_compat_notice">本功能是为了解决某些软件打字时无法正确显示文本，默认已经配置好了，普通应用不需要修改本设置。</string>
