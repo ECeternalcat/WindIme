@@ -159,14 +159,16 @@ public class SetupWizardActivity extends Activity {
             tipView.setVisibility(android.view.View.VISIBLE);
             return true;
         }
-        // The return key may combine short and long press: when it is already
+        // Any key may combine short and long press: when it is already
         // captured as backspace and the user offers the same key for the
         // collapse step, do not reject it as a duplicate - confirm the combo
         // (short press stays backspace; long press collapse replaces the
-        // default rapid-delete).
+        // default rapid-delete). Valuable on the 701KC, where the physical
+        // return key is a firmware-injected virtual key whose early hold
+        // events the vendor daemon steals - the combo on any other physical
+        // key is unaffected.
         if (target == InputAction.COLLAPSE_IME
-                && keyCode == KeyEvent.KEYCODE_BACK
-                && capturedBackspaceOnBackKey()) {
+                && capturedBackspaceOnSameKey(keyCode, event.getScanCode())) {
             showBackKeyCollapseConfirm();
             return true;
         }
@@ -232,10 +234,17 @@ public class SetupWizardActivity extends Activity {
         return false;
     }
 
-    /** Whether the return key (KEYCODE_BACK) was captured as backspace earlier in this wizard run. */
-    private boolean capturedBackspaceOnBackKey() {
+    /**
+     * Whether the offered key (by keycode and/or scancode) is the one already
+     * captured as backspace earlier in this wizard run.
+     */
+    private boolean capturedBackspaceOnSameKey(int keyCode, int scanCode) {
         KeyMapConfig.Mapping backspace = captured.get(InputAction.BACKSPACE_DELETE);
-        return backspace != null && backspace.keycode == KeyEvent.KEYCODE_BACK;
+        if (backspace == null) {
+            return false;
+        }
+        return (keyCode != 0 && backspace.keycode == keyCode)
+                || (scanCode != 0 && backspace.scanCode == scanCode);
     }
 
     /**

@@ -117,18 +117,6 @@ public final class KeyMapper {
         }
     }
 
-    /**
-     * @return true when the system back key (KEYCODE_BACK) is explicitly
-     *         mapped to BACKSPACE_DELETE - the precondition for the
-     *         return-key long-press behaviour setting.
-     */
-    public boolean isBackKeyBoundToBackspace() {
-        synchronized (this) {
-            return keyCodeMap.get(android.view.KeyEvent.KEYCODE_BACK)
-                    == InputAction.BACKSPACE_DELETE;
-        }
-    }
-
     public KeyMapConfig getConfig() {
         synchronized (this) {
             return config == null ? null : config.copy();

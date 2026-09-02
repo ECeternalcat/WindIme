@@ -123,8 +123,9 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     private boolean backspaceHeld;
     private boolean poundHeld;
     private boolean consumeBoundBackKeyUp;
-    /** Long-press resolution state for the back key bound as backspace. */
+    /** Long-press resolution state for keys calibrated as backspace. */
     private boolean boundBackLongFired;
+    private int boundBackKeyCode;
     private boolean consumeMenuKeyUp;
     /** State for the user-mapped long-press collapse action. */
     private boolean collapseKeyTracked;
@@ -402,6 +403,10 @@ public class GarahoImeService extends InputMethodService implements EngineListen
     @Override
     public void onFinishInput() {
         cancelCollapseKeyTracking();
+        // Never carry a half-finished bound-back hold into the next session:
+        // a stale swallow flag would eat the user's BACK presses.
+        consumeBoundBackKeyUp = false;
+        boundBackLongFired = false;
         inputViewActive = false;
         inputSessionActive = false;
         showModeBar = true;
@@ -780,6 +785,28 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_BACK
+                || keyMapper.resolve(keyCode, event.getScanCode())
+                        == InputAction.BACKSPACE_DELETE) {
+            // TEMP DIAGNOSTIC: trace every backspace-capable key at the
+            // earliest point.
+            Log.d(TAG, "BACK top rc=" + event.getRepeatCount()
+                    + " kc=" + keyCode
+                    + " gate=" + InputEventGate.accepts(inputSessionActive, inputViewActive)
+                    + " consumeUp=" + consumeBoundBackKeyUp
+                    + " action=" + keyMapper.resolve(keyCode, event.getScanCode()));
+        }
+        // Mid-hold of a backspace-calibrated key must survive the lifecycle
+        // gate below: a long-press collapse hides the input view
+        // (inputViewActive = false) while the key is still held, and any
+        // repeat the gate then releases to the host is treated by editors as
+        // held backspace - rapid-deleting committed text. Consume the rest of
+        // the hold here, before the gate.
+        if (consumeBoundBackKeyUp && keyCode == boundBackKeyCode
+                && keyMapper.resolve(keyCode, event.getScanCode())
+                        == InputAction.BACKSPACE_DELETE) {
+            return handleBoundBackKeyDown(event);
+        }
         // InputMethodService can receive a late hardware event after the input
         // view was hidden. Never resolve or consume it outside an active input
         // view, otherwise ENTER/DPAD keys can appear dead in the host UI.
@@ -846,26 +873,7 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         // hide the IME when there is nothing left to delete. Once hidden, the
         // lifecycle gate releases the next BACK press to the host system.
         if (keyCode == KeyEvent.KEYCODE_BACK && action == InputAction.BACKSPACE_DELETE) {
-            consumeBoundBackKeyUp = true;
-            trackResetComboDown(action, event);
-            if (isBoundBackLongPressCollapse()) {
-                // iWnn-style: the tap deletes on key release; holding past the
-                // threshold collapses the IME immediately (rapid-delete is
-                // disabled in this mode, the two cannot coexist).
-                if (event.getRepeatCount() == 0) {
-                    boundBackLongFired = false;
-                } else if (!boundBackLongFired
-                        && event.getEventTime() - event.getDownTime() >= longPressThresholdMs()) {
-                    boundBackLongFired = true;
-                    dismissIme();
-                }
-                return true;
-            }
-            if (privateInput) {
-                privateMultiTapState.breakCycle();
-                return handlePrivateBoundBackKey();
-            }
-            return handleBoundBackKey();
+            return handleBoundBackKeyDown(event);
         }
         // Two-stage BACK (doc §1 / iWnn quick-select): while composing, first
         // BACK cancels composing and returns to the mode bar; a second BACK
@@ -891,6 +899,15 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (action == InputAction.TOGGLE_CAPS) {
             return handleCapsKeyDown(action, event);
         }
+        // Generalised combo: any OTHER physical key calibrated as backspace
+        // (not the return key, which the dedicated branch above already
+        // handled) gets the same tap-delete-on-release + long-press-collapse
+        // resolution when collapse mode is armed.
+        if (action == InputAction.BACKSPACE_DELETE
+                && keyCode != KeyEvent.KEYCODE_BACK
+                && isBoundBackLongPressCollapse()) {
+            return handleBoundBackKeyDown(event);
+        }
         return handleAction(action) || super.onKeyDown(keyCode, event);
     }
 
@@ -900,16 +917,24 @@ public class GarahoImeService extends InputMethodService implements EngineListen
             consumeMenuKeyUp = false;
             return true;
         }
-        if (keyCode == KeyEvent.KEYCODE_BACK && consumeBoundBackKeyUp) {
+        if (consumeBoundBackKeyUp && keyCode == boundBackKeyCode
+                && keyMapper.resolve(keyCode, event.getScanCode())
+                        == InputAction.BACKSPACE_DELETE) {
             consumeBoundBackKeyUp = false;
             trackResetComboUp(InputAction.BACKSPACE_DELETE);
+            Log.d(TAG, "boundBack up longFired=" + boundBackLongFired);
             if (boundBackLongFired) {
                 boundBackLongFired = false;
+                // Deferred long-press collapse: the key is released, no more
+                // repeats can leak to the host, safe to hide now.
+                Log.d(TAG, "boundBack collapse on release");
+                dismissIme();
                 return true;
             }
             if (isBoundBackLongPressCollapse()) {
                 // Deferred tap: no long press fired while held, so run the
                 // delete (or hide-when-empty) step now.
+                Log.d(TAG, "boundBack deferred tap delete");
                 if (privateInput) {
                     privateMultiTapState.breakCycle();
                     return handlePrivateBoundBackKey();
@@ -994,8 +1019,14 @@ public class GarahoImeService extends InputMethodService implements EngineListen
 
     /** Return key bound as backspace + collapse long-press mode selected. */
     private boolean isBoundBackLongPressCollapse() {
+        // Generalised combo: with the collapse mode armed, EVERY key calibrated
+        // as backspace uses tap-delete-on-release + long-press-collapse (the
+        // physical return key is a firmware-injected virtual key whose early
+        // hold events the vendor daemon steals while the editor has text, so
+        // users can put the combo on any other physical key for a clean
+        // experience - np701kc.md firmware notes).
         return prefs != null && keyMapper != null
-                && keyMapper.isBackKeyBoundToBackspace()
+                && keyMapper.isActionBound(InputAction.BACKSPACE_DELETE)
                 && prefs.isBackKeyLongPressCollapse();
     }
 
@@ -1419,7 +1450,50 @@ public class GarahoImeService extends InputMethodService implements EngineListen
         if (quickMenuPanel != null && quickMenuPanel.isShowing()) {
             quickMenuPanel.dismiss();
         }
+        // iWnn active-finish protocol (np701kc.md §14.7): a plain
+        // requestHideSelf is immediately undone by fullscreen-extract hosts
+        // (the editor keeps focus and re-requests the IME, observed as
+        // hide/re-show fighting). Finish_IME {isActiveFinish=true} makes the
+        // vendor hosts yield the editor like a center-OK completion.
+        activeFinish = true;
         requestHideSelf(0);
+    }
+
+    /**
+     * A key-down (or repeat) of the return key calibrated as backspace.
+     * Reached both through the normal dispatch and from the pre-gate mid-hold
+     * swallow in {@link #onKeyDown}: a long-press collapse hides the input
+     * view while the key is still held, and the gate must not release the
+     * remaining repeats to the host editor (it would rapid-delete text).
+     */
+    private boolean handleBoundBackKeyDown(KeyEvent event) {
+        consumeBoundBackKeyUp = true;
+        trackResetComboDown(InputAction.BACKSPACE_DELETE, event);
+        Log.d(TAG, "boundBack down repeat=" + event.getRepeatCount()
+                + " collapseMode=" + isBoundBackLongPressCollapse());
+        if (isBoundBackLongPressCollapse()) {
+            // iWnn-style: the tap deletes on key release; a long hold
+            // collapses the IME. The actual hide is deferred to key release:
+            // hiding mid-hold closes the lifecycle gate and destabilises the
+            // event routing (framework diverts the remaining repeats to the
+            // host editor, which rapid-deletes text; extract hosts also
+            // re-show the IME immediately). While held, the gate stays open
+            // and every repeat is consumed here harmlessly.
+            if (event.getRepeatCount() == 0) {
+                boundBackLongFired = false;
+                boundBackKeyCode = event.getKeyCode();
+            } else if (!boundBackLongFired
+                    && event.getEventTime() - event.getDownTime() >= longPressThresholdMs()) {
+                boundBackLongFired = true;
+                Log.d(TAG, "boundBack long-press collapse armed");
+            }
+            return true;
+        }
+        if (privateInput) {
+            privateMultiTapState.breakCycle();
+            return handlePrivateBoundBackKey();
+        }
+        return handleBoundBackKey();
     }
 
     private boolean handleBoundBackKey() {
